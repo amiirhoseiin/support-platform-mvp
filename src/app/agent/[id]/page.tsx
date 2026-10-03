@@ -23,7 +23,13 @@ import {
   MessageSquare,
   Sparkles,
   UserCheck,
+  ExternalLink,
+  Paperclip,
+  FileText,
+  Activity,
 } from 'lucide-react';
+import { SLA_TARGETS_MINUTES, formatMinutes } from '@/lib/sla';
+import { CustomerTier } from '@/types/database';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -94,6 +100,21 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
     email: string;
     role: 'agent' | 'founder';
   }[];
+
+  // Fetch previous tickets for the same customer (excluding current ticket)
+  const { data: previousTicketsData } = await supabase
+    .from('tickets')
+    .select('id, subject, status, priority, created_at, resolved_at')
+    .eq('customer_id', ticket.customer_id)
+    .neq('id', id)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  const previousTickets = (previousTicketsData || []) as Ticket[];
+
+  // Extract external URLs and attachments mentioned in ticket description and messages
+  const allText = [ticket.description, ...messages.map((m) => m.body)].join(' ');
+  const urlMatches = Array.from(new Set(allText.match(/https?:\/\/[^\s"'<>\)]+/gi) || []));
 
   const getTierBadge = (tier?: string) => {
     switch (tier) {
@@ -414,20 +435,143 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* SLA & Audit Trail Sidebar (1 col) */}
+          {/* Comprehensive Agent Context Sidebar (1 col) */}
           <div className="space-y-4">
-            <Card className="border-zinc-200 shadow-sm">
-              <CardHeader className="p-4 pb-2 border-b border-zinc-100">
-                <div className="flex items-center gap-2">
-                  <History className="h-4 w-4 text-zinc-500" />
-                  <CardTitle className="text-sm font-semibold">Audit Trail & SLA</CardTitle>
+            {/* 1. Customer Plan & Contract SLA Card */}
+            <Card className="border-zinc-200 shadow-xs">
+              <CardHeader className="p-3.5 pb-2 border-b border-zinc-100 bg-zinc-50/60">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900">
+                    <Building2 className="h-4 w-4 text-zinc-500" />
+                    <span>Account & Contract SLA</span>
+                  </div>
+                  {getTierBadge(ticket.customer?.tier)}
+                </div>
+              </CardHeader>
+              <CardContent className="p-3.5 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500">Plan Tier:</span>
+                  <span className="font-semibold text-zinc-800 capitalize">{ticket.customer?.tier || 'small'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500">First Reply SLA:</span>
+                  <span className="font-mono font-bold text-purple-900">
+                    &lt;{formatMinutes(SLA_TARGETS_MINUTES[(ticket.customer?.tier || 'small') as CustomerTier] || 1440)}
+                  </span>
+                </div>
+                {ticket.customer?.metadata && Object.keys(ticket.customer.metadata).length > 0 && (
+                  <div className="pt-2 border-t border-zinc-100 space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-zinc-400">Account Metadata</span>
+                    {Object.entries(ticket.customer.metadata).map(([key, val]) => (
+                      <div key={key} className="flex items-center justify-between text-[11px]">
+                        <span className="text-zinc-500 capitalize">{key.replace('_', ' ')}:</span>
+                        <span className="font-mono text-zinc-800">{String(val)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 2. Customer Previous Tickets History (Without leaving screen) */}
+            <Card className="border-zinc-200 shadow-xs">
+              <CardHeader className="p-3.5 pb-2 border-b border-zinc-100 bg-zinc-50/60">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900">
+                    <History className="h-4 w-4 text-zinc-500" />
+                    <span>Customer Ticket History</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px]">
+                    {previousTickets.length} past
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0 divide-y divide-zinc-100 max-h-[220px] overflow-y-auto">
+                {previousTickets.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-zinc-400 italic">
+                    First ticket from this customer account.
+                  </div>
+                ) : (
+                  previousTickets.map((pt) => (
+                    <Link
+                      key={pt.id}
+                      href={`/agent/${pt.id}`}
+                      className="block p-3 hover:bg-zinc-50 transition-colors text-xs space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-medium text-zinc-900 truncate max-w-[160px]" title={pt.subject}>
+                          {pt.subject}
+                        </span>
+                        <StatusBadge status={pt.status} />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
+                        <span>#{pt.id.slice(0, 8)}</span>
+                        <span>{new Date(pt.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                      </div>
+                    </Link>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 3. Attachments & External References Panel */}
+            <Card className="border-zinc-200 shadow-xs">
+              <CardHeader className="p-3.5 pb-2 border-b border-zinc-100 bg-zinc-50/60">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900">
+                    <Paperclip className="h-4 w-4 text-zinc-500" />
+                    <span>Attachments & Resources</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px]">
+                    {urlMatches.length} links
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-3.5 text-xs">
+                {urlMatches.length === 0 ? (
+                  <p className="text-zinc-400 text-xs italic">
+                    No external URLs, logs, or file links attached to this thread.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {urlMatches.map((link, idx) => {
+                      let domain = link;
+                      try {
+                        domain = new URL(link).hostname;
+                      } catch {
+                        domain = link.slice(0, 25);
+                      }
+                      return (
+                        <a
+                          key={idx}
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between gap-2 p-2 rounded border border-zinc-200 bg-zinc-50 hover:bg-zinc-100 transition-colors text-[11px] text-blue-700 font-medium"
+                        >
+                          <span className="truncate">{domain}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0 text-zinc-400" />
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 4. Audit Trail & SLA Event Stream */}
+            <Card className="border-zinc-200 shadow-xs">
+              <CardHeader className="p-3.5 pb-2 border-b border-zinc-100 bg-zinc-50/60">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900">
+                  <Activity className="h-4 w-4 text-zinc-500" />
+                  <span>Audit Trail & SLA Events</span>
                 </div>
               </CardHeader>
               <CardContent className="p-4">
                 {events.length === 0 ? (
                   <p className="text-xs text-zinc-400 italic">No logged events yet.</p>
                 ) : (
-                  <div className="relative pl-4 space-y-4 before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-200">
+                  <div className="relative pl-4 space-y-3.5 before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-200">
                     {events.map((evt) => (
                       <div key={evt.id} className="relative text-xs space-y-0.5">
                         <div className="absolute -left-4 top-1 h-2 w-2 rounded-full bg-zinc-400 ring-2 ring-white" />

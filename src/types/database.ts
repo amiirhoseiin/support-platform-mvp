@@ -1,5 +1,12 @@
 export type UserRole = 'customer' | 'agent' | 'founder';
-export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type TicketStatus =
+  | 'open'
+  | 'in_progress'
+  | 'waiting_customer'
+  | 'waiting_internal'
+  | 'reopened'
+  | 'resolved'
+  | 'closed';
 export type CustomerTier = 'small' | 'substantial' | 'enterprise';
 export type TicketPriority = 'low' | 'normal' | 'high' | 'critical';
 export type EventType =

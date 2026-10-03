@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Ticket, UserProfile } from '@/types/database';
 import { AutoReplySettingsTrigger } from '@/components/agent/AutoReplySettingsTrigger';
+import { isTicketSlaBreached, isTicketStale, formatMinutes } from '@/lib/sla';
 import {
   Inbox,
   Clock,
@@ -24,6 +25,7 @@ import {
   Lock,
   Activity,
   MessageSquare,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default async function AgentQueuePage({
@@ -61,16 +63,16 @@ export default async function AgentQueuePage({
 
   const allTickets: Ticket[] = allTicketsData || [];
 
-  // Filter open & in_progress for the active queue
-  const openAndInProgress = allTickets.filter(
-    (t) => t.status === 'open' || t.status === 'in_progress'
+  // Filter active tickets (all non-resolved, non-closed)
+  const activeTickets = allTickets.filter(
+    (t) => t.status !== 'resolved' && t.status !== 'closed'
   );
   const resolvedTickets = allTickets.filter(
     (t) => t.status === 'resolved' || t.status === 'closed'
   );
 
   // Sorting requirement:
-  // Order by priority/tier first (enterprise/substantial first), then by oldest created_at (longest waiting)
+  // Order by SLA breach first, then priority/tier (enterprise/substantial first), then oldest created_at (longest waiting)
   const tierWeights: Record<string, number> = {
     enterprise: 300,
     substantial: 200,
@@ -84,7 +86,12 @@ export default async function AgentQueuePage({
     low: 10,
   };
 
-  const sortedOpenTickets = [...openAndInProgress].sort((a, b) => {
+  const sortedActiveTickets = [...activeTickets].sort((a, b) => {
+    // 0. SLA Breached tickets urgent precedence!
+    const breachA = isTicketSlaBreached(a) ? 1 : 0;
+    const breachB = isTicketSlaBreached(b) ? 1 : 0;
+    if (breachB !== breachA) return breachB - breachA;
+
     // 1. Tier first (Enterprise / Substantial first)
     const tierA = tierWeights[a.customer?.tier || 'small'] || 0;
     const tierB = tierWeights[b.customer?.tier || 'small'] || 0;
@@ -103,14 +110,26 @@ export default async function AgentQueuePage({
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
 
-  const assignedToMe = sortedOpenTickets.filter((t) => t.assigned_agent_id === user.id);
-  const unassignedTickets = sortedOpenTickets.filter((t) => !t.assigned_agent_id);
+  const assignedToMe = sortedActiveTickets.filter((t) => t.assigned_agent_id === user.id);
+  const unassignedTickets = sortedActiveTickets.filter((t) => !t.assigned_agent_id);
+  const slaBreachedTickets = sortedActiveTickets.filter((t) => isTicketSlaBreached(t));
+  const waitingCustomerTickets = sortedActiveTickets.filter((t) => t.status === 'waiting_customer');
+  const waitingInternalTickets = sortedActiveTickets.filter((t) => t.status === 'waiting_internal');
+  const reopenedTickets = sortedActiveTickets.filter((t) => t.status === 'reopened');
 
-  let displayTickets: Ticket[] = sortedOpenTickets;
+  let displayTickets: Ticket[] = sortedActiveTickets;
   if (filter === 'assigned_me') {
     displayTickets = assignedToMe;
   } else if (filter === 'unassigned') {
     displayTickets = unassignedTickets;
+  } else if (filter === 'breached') {
+    displayTickets = slaBreachedTickets;
+  } else if (filter === 'waiting_customer') {
+    displayTickets = waitingCustomerTickets;
+  } else if (filter === 'waiting_internal') {
+    displayTickets = waitingInternalTickets;
+  } else if (filter === 'reopened') {
+    displayTickets = reopenedTickets;
   } else if (filter === 'resolved') {
     displayTickets = resolvedTickets;
   }
@@ -225,7 +244,7 @@ export default async function AgentQueuePage({
       <main className="mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-6 flex-1">
         {/* Founder Metric SLA Header (Rendered conditionally when user role is 'founder') */}
         {profile.role === 'founder' && (
-          <FounderMetricsHeader openTickets={openAndInProgress} />
+          <FounderMetricsHeader allTickets={allTickets} />
         )}
 
         {/* Queue Header & Filters */}
@@ -236,60 +255,107 @@ export default async function AgentQueuePage({
                 Unified Support Queue
               </h1>
               <Badge variant="default" className="text-xs">
-                {openAndInProgress.length} Active
+                {activeTickets.length} Active
               </Badge>
+              {slaBreachedTickets.length > 0 && (
+                <Badge variant="destructive" className="text-xs bg-red-600 animate-pulse font-bold">
+                  {slaBreachedTickets.length} Breached
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-zinc-500 mt-1">
-              Prioritized by customer contract tier (Enterprise / Substantial) and longest wait time.
+              Prioritized by SLA breach urgency, contract tier (Enterprise / Substantial), and wait time.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <AutoReplySettingsTrigger currentUserRole={profile.role} />
 
-            {/* Filter Tabs */}
+            {/* Comprehensive Filter Tabs */}
             <div className="flex flex-wrap items-center gap-1.5 bg-zinc-200/70 p-1 rounded-lg text-xs font-medium">
-            <Link
-              href="/agent"
-              className={`px-3 py-1.5 rounded-md transition-all ${
-                !filter || filter === 'all'
-                  ? 'bg-white text-zinc-900 shadow-xs font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900'
-              }`}
-            >
-              All Active ({openAndInProgress.length})
-            </Link>
-            <Link
-              href="/agent?filter=assigned_me"
-              className={`px-3 py-1.5 rounded-md transition-all ${
-                filter === 'assigned_me'
-                  ? 'bg-white text-zinc-900 shadow-xs font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900'
-              }`}
-            >
-              Assigned to Me ({assignedToMe.length})
-            </Link>
-            <Link
-              href="/agent?filter=unassigned"
-              className={`px-3 py-1.5 rounded-md transition-all ${
-                filter === 'unassigned'
-                  ? 'bg-white text-zinc-900 shadow-xs font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900'
-              }`}
-            >
-              Unassigned ({unassignedTickets.length})
-            </Link>
-            <Link
-              href="/agent?filter=resolved"
-              className={`px-3 py-1.5 rounded-md transition-all ${
-                filter === 'resolved'
-                  ? 'bg-white text-zinc-900 shadow-xs font-semibold'
-                  : 'text-zinc-600 hover:text-zinc-900'
-              }`}
-            >
-              Resolved ({resolvedTickets.length})
-            </Link>
-          </div>
+              <Link
+                href="/agent"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  !filter || filter === 'all'
+                    ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                All ({activeTickets.length})
+              </Link>
+              <Link
+                href="/agent?filter=assigned_me"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  filter === 'assigned_me'
+                    ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Mine ({assignedToMe.length})
+              </Link>
+              <Link
+                href="/agent?filter=unassigned"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  filter === 'unassigned'
+                    ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Unassigned ({unassignedTickets.length})
+              </Link>
+              <Link
+                href="/agent?filter=breached"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  filter === 'breached'
+                    ? 'bg-red-600 text-white shadow-xs font-bold'
+                    : slaBreachedTickets.length > 0
+                    ? 'text-red-700 font-semibold hover:bg-red-50'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Breached ({slaBreachedTickets.length})
+              </Link>
+              <Link
+                href="/agent?filter=waiting_customer"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  filter === 'waiting_customer'
+                    ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Wait Client ({waitingCustomerTickets.length})
+              </Link>
+              <Link
+                href="/agent?filter=waiting_internal"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  filter === 'waiting_internal'
+                    ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Wait Int ({waitingInternalTickets.length})
+              </Link>
+              <Link
+                href="/agent?filter=reopened"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  filter === 'reopened'
+                    ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Reopened ({reopenedTickets.length})
+              </Link>
+              <Link
+                href="/agent?filter=resolved"
+                className={`px-2.5 py-1 rounded-md transition-all ${
+                  filter === 'resolved'
+                    ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                    : 'text-zinc-600 hover:text-zinc-900'
+                }`}
+              >
+                Resolved ({resolvedTickets.length})
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -305,12 +371,22 @@ export default async function AgentQueuePage({
                     ? 'My Assigned Tickets'
                     : filter === 'unassigned'
                     ? 'Unassigned Queue (Needs Owner)'
-                    : 'Priority Queue'}
+                    : filter === 'breached'
+                    ? 'SLA Breached Queue (Immediate Attention Required)'
+                    : filter === 'waiting_customer'
+                    ? 'Waiting on Customer Response'
+                    : filter === 'waiting_internal'
+                    ? 'Waiting on Internal Escalation / Tier 2'
+                    : filter === 'reopened'
+                    ? 'Reopened Tickets (Customer Needs Re-Engagement)'
+                    : 'Priority Queue (Ordered by SLA & Contract Tier)'}
                 </CardTitle>
                 <CardDescription className="text-xs mt-0.5">
                   {filter === 'resolved'
                     ? 'Closed and resolved support threads'
-                    : 'Ordered by tier weighting and SLA response urgency'}
+                    : filter === 'breached'
+                    ? 'Tickets that exceeded first response contract SLA limits'
+                    : 'Ordered by SLA breach status, plan tier weighting, and response urgency'}
                 </CardDescription>
               </div>
               <span className="text-xs text-zinc-500 font-mono">
@@ -425,9 +501,35 @@ export default async function AgentQueuePage({
                             <PriorityBadge priority={ticket.priority} />
                           </td>
 
-                          {/* Status */}
+                          {/* Status and Crack Prevention Indicators */}
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <StatusBadge status={ticket.status} />
+                            {(() => {
+                              const isBreached = isTicketSlaBreached(ticket);
+                              const isIdle = isTicketStale(ticket, 24);
+                              const aiConfidence = (ticket.metadata as { ai_classification?: { confidence?: number } })?.ai_classification?.confidence;
+                              const isLowAi = typeof aiConfidence === 'number' && aiConfidence < 0.85;
+
+                              return (
+                                <div className="flex flex-col gap-1 items-start">
+                                  <StatusBadge status={ticket.status} />
+                                  {isBreached && (
+                                    <Badge variant="destructive" className="text-[9px] py-0 px-1.5 h-3.5 bg-red-600 font-bold animate-pulse">
+                                      SLA BREACH
+                                    </Badge>
+                                  )}
+                                  {isIdle && !isBreached && (
+                                    <Badge variant="secondary" className="text-[9px] py-0 px-1.5 h-3.5 bg-zinc-200 text-zinc-700 font-mono">
+                                      Stale (24h+)
+                                    </Badge>
+                                  )}
+                                  {isLowAi && (
+                                    <Badge variant="outline" className="text-[9px] py-0 px-1.5 h-3.5 border-purple-300 text-purple-800 bg-purple-50">
+                                      Manual Triage
+                                    </Badge>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           {/* Assignee */}
