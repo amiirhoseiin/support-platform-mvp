@@ -58,26 +58,43 @@ Data isolation is **not** handled by fragile application-level `if` checks. It i
 
 ---
 
-## 🧠 AI Copilot Architecture (Agent-in-the-Loop)
+## 🧠 AI Copilot Architecture (Agent-in-the-Loop & Safety Guardrails)
 
-- **Cost Control**: Powered by Google Generative AI (`gemini-flash-latest`) via the Vercel AI SDK. MVP token burn rate is effectively **$0**.
-- **Zero Hallucination Risk for Customers**: Customers never interact with an unvetted chatbot. The AI only assists agents by drafting responses in the internal staff workspace.
-- **Agent Workflow**:
-  1. Click **"Generate AI Draft"** inside any ticket.
-  2. The model digests ticket context, customer plan tier, and previous message history.
-  3. The draft is stored with `is_ai_draft: TRUE` (hidden from the customer).
-  4. The agent reviews the text and clicks **"Approve & Send"**, publishing the reply and recording `first_responded_at`.
+- **Cost Control & Performance**: Powered by Google Generative AI (`gemini-flash-latest` / `gemini-2.5-flash-lite`) abstracted behind a pluggable `AiProviderInterface`. Token burn rate remains effectively **$0**.
+- **Automated Classification**: Classifies incoming tickets into 4 categories: `duplicate_question`, `billing`, `bug`, and `feature_request`.
+- **Tenant-Scoped RAG (Zero Cross-Tenant Leakage)**: Similar solved tickets used to generate context are queried strictly with `.eq('customer_id', customerId)` at the SQL layer. A customer's technical history can never be leaked to another tenant.
+- **Prompt Injection Defense**: Untrusted customer input is sanitized and enclosed in `<untrusted_customer_input>` tags. The model is constrained by strict JSON schema outputs and cannot execute arbitrary actions.
+- **Agent Experience**:
+  1. The agent is shown: *"This is a suggested reply. Edit it or approve it."*
+  2. The agent can edit the suggested response inline directly before sending.
+  3. The agent can approve and send the reply with one click, or discard it.
+  4. The classification category, confidence percentage, and similar solved tickets used are surfaced for context.
+- **Auto-Reply Option & Safety Invariants**:
+  - Configurable via the agent dashboard settings dialog (`app_settings` table), **disabled by default**.
+  - Can only be enabled for low-risk categories (`duplicate_question`, `feature_request`) with high confidence ($\ge 85\%$).
+  - **Billing, security, and bug tickets always require human review** — the system hard-blocks auto-replying to them.
+  - An explicit human escape hatch is always appended to any automated reply.
+  - **Never auto-closes tickets**: tickets are updated to `in_progress`, never `resolved`.
+  - Every AI reply, classification, and confidence score is audit logged in `ticket_events`.
+- **Fail-Closed Principle**: If the AI provider times out, encounters rate limits, or errors, it cascades through fallback models and routes to the human queue (`shouldRequireHumanReview: true`). Tickets are never silently dropped.
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing Suite (Automated Playwright E2E & Invariant Tests)
 
-### Automated E2E Workflow Test (Playwright)
-Validates the complete critical customer path: Authentication $\rightarrow$ Route guard $\rightarrow$ Ticket modal $\rightarrow$ Server Action $\rightarrow$ Database insertion $\rightarrow$ Dashboard list update.
+Run the automated test suite with:
 
 ```bash
 npm run test:workflow
 ```
+
+The test suite executes 6 comprehensive automated tests:
+1. **Critical Path E2E Workflow (`tests/customer-workflow.spec.ts`)**: Login $\rightarrow$ Route guard $\rightarrow$ New ticket modal $\rightarrow$ Server Action $\rightarrow$ Database insertion $\rightarrow$ Dashboard list update.
+2. **Data Layer Tenant Isolation (`tests/ai-tenant-isolation-and-safety.spec.ts`)**: Verifies `getTenantSolvedTickets` physically prevents Customer A from querying Customer B's historical solutions.
+3. **Billing & Safety Policy Immunity (`tests/ai-tenant-isolation-and-safety.spec.ts`)**: Verifies billing, bug, and security tickets are permanently locked to human review even if auto-reply is enabled.
+4. **AI Fail-Closed Fallback (`tests/ai-tenant-isolation-and-safety.spec.ts`)**: Simulates provider outage / bad credentials, verifying multi-model fallback, zero silent drops, and safe routing to human queue with 0 confidence.
+5. **Prompt Injection Defense (`tests/ai-tenant-isolation-and-safety.spec.ts`)**: Tests adversarial override payloads within untrusted input sandboxes.
+6. **AI Agent Full Workflow E2E (`tests/ai-agent-workflow.spec.ts`)**: Customer creates ticket $\rightarrow$ AI generates suggested draft with classification and context $\rightarrow$ Agent inspects and edits suggested reply inline $\rightarrow$ Agent approves & sends $\rightarrow$ Customer receives verified response in portal.
 
 ---
 

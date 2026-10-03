@@ -5,6 +5,12 @@ import { createClient } from '@/utils/supabase/server';
 import { TicketPriority, TicketStatus } from '@/types/database';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText } from 'ai';
+import {
+  triageTicketWithAi,
+  getAutoReplyConfig,
+  updateAutoReplyConfig,
+} from '@/lib/ai/service';
+import { AutoReplyConfig } from '@/lib/ai/types';
 
 export type ActionResult<T = unknown> = {
   success: boolean;
@@ -76,6 +82,13 @@ export async function createTicket(formData: FormData): Promise<ActionResult<{ t
 
     if (eventError) {
       console.error('Failed to log ticket event:', eventError);
+    }
+
+    // 3. Automated AI Copilot Triage & Classification (Fail-Closed)
+    try {
+      await triageTicketWithAi(supabase, ticket.id);
+    } catch (aiErr) {
+      console.warn('AI Triage failed during ticket creation, safely routed to human queue:', aiErr);
     }
 
     revalidatePath('/customer');
@@ -285,9 +298,10 @@ export async function updateTicketStatus(
 }
 
 /**
- * Phase 4: Generates an AI draft reply using Vercel AI SDK and saves it to messages with is_ai_draft: true
+ * Generates an AI draft reply using tenant-scoped retrieval and classification,
+ * saving the suggestion with is_ai_draft: true for agent review.
  */
-export async function generateAiDraft(ticketId: string): Promise<ActionResult<{ draftId: string; text: string }>> {
+export async function generateAiDraft(ticketId: string): Promise<ActionResult<{ text?: string }>> {
   try {
     const supabase = await createClient();
 
@@ -311,108 +325,19 @@ export async function generateAiDraft(ticketId: string): Promise<ActionResult<{ 
       return { success: false, error: 'Forbidden. Staff only.' };
     }
 
-    // Fetch ticket details with customer
-    const { data: ticket, error: ticketErr } = await supabase
-      .from('tickets')
-      .select('*, customer:customer_id(id, name, email, tier)')
-      .eq('id', ticketId)
-      .single();
-
-    if (ticketErr || !ticket) {
-      return { success: false, error: 'Ticket not found.' };
-    }
-
-    // Fetch previous thread messages (chronological order)
-    const { data: messages } = await supabase
-      .from('messages')
-      .select('body, is_internal_note, is_ai_draft, sender:sender_id(name, role)')
-      .eq('ticket_id', ticketId)
-      .order('created_at', { ascending: true });
-
-    // Format context for prompt
-    const customerObj = (Array.isArray(ticket.customer) ? ticket.customer[0] : ticket.customer) as { name?: string; email?: string; tier?: string } | null;
-    const customerInfo = `Customer: ${customerObj?.name || 'Customer'} (${customerObj?.email || 'N/A'}), Tier: ${customerObj?.tier?.toUpperCase() || 'SMALL'}`;
-    const threadContext = (messages || [])
-      .filter((m) => !m.is_ai_draft) // omit existing drafts
-      .map((m) => {
-        const senderObj = (Array.isArray(m.sender) ? m.sender[0] : m.sender) as { name?: string; role?: string } | null;
-        const roleLabel = m.is_internal_note
-          ? '[INTERNAL NOTE]'
-          : senderObj?.role === 'customer'
-          ? '[CUSTOMER]'
-          : '[SUPPORT AGENT]';
-        return `${roleLabel} ${senderObj?.name || 'User'}: ${m.body}`;
-      })
-      .join('\n');
-
-    const prompt = `
-You are a senior technical support engineer at a B2B SaaS company.
-Generate a polite, clear, empathetic, and professional draft response to assist the customer.
-
-${customerInfo}
-Ticket Subject: ${ticket.subject}
-Ticket Description:
-${ticket.description}
-
-Conversation History so far:
-${threadContext || '(No previous messages)'}
-
-Guidelines:
-1. Address the customer respectfully.
-2. Acknowledge their issue directly and reassure them based on their tier.
-3. If more technical diagnostics (logs, request IDs, timestamps) are needed, ask specific, helpful questions.
-4. Match the language used by the customer (if the inquiry is in Persian, reply in polite, fluent Persian; if in English, reply in professional English).
-5. Output ONLY the response body text to be sent to the customer. Do not include meta-commentary, placeholders like "[Your Name]", or markdown quotes.
-`;
-
-    const candidateModels = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-2.5-flash-lite'];
-    let draftText = '';
-    let usedModel = 'gemini-flash-latest';
-
-    for (const m of candidateModels) {
-      try {
-        const result = await generateText({
-          model: google(m),
-          prompt,
-        });
-        if (result.text) {
-          draftText = result.text.trim();
-          usedModel = m;
-          break;
-        }
-      } catch (genErr) {
-        console.warn(`Model ${m} encountered demand/error, falling back:`, (genErr as Error)?.message);
-      }
-    }
-
-    if (!draftText) {
-      return { success: false, error: 'AI service is temporarily experiencing high demand. Please try again shortly.' };
-    }
-
-    // Insert draft into messages table with is_ai_draft: true
-    const { data: draftMessage, error: insertError } = await supabase
-      .from('messages')
-      .insert({
-        ticket_id: ticketId,
-        sender_id: user.id,
-        body: draftText,
-        is_internal_note: false,
-        is_ai_draft: true,
-        metadata: {
-          ai_model: usedModel,
-          generated_at: new Date().toISOString(),
-        },
-      })
-      .select('id')
-      .single();
-
-    if (insertError || !draftMessage) {
-      console.error('Failed to insert AI draft message:', insertError);
-      return { success: false, error: insertError?.message || 'Failed to save draft.' };
+    // Run tenant-scoped AI triage & draft generation
+    const triageRes = await triageTicketWithAi(supabase, ticketId);
+    if (!triageRes.success) {
+      return { success: false, error: triageRes.error || 'Failed to generate AI suggestion.' };
     }
 
     revalidatePath(`/agent/${ticketId}`);
-    return { success: true, data: { draftId: draftMessage.id, text: draftText } };
+    return {
+      success: true,
+      data: {
+        text: triageRes.result?.suggestedReplyText || '',
+      },
+    };
   } catch (err: unknown) {
     console.error('Error generating AI draft:', err);
     return {
@@ -423,12 +348,14 @@ Guidelines:
 }
 
 /**
- * Phase 4: Approves an AI draft, making it a live customer-visible message
- * and updating first_responded_at if needed.
+ * Approves an AI draft, making it a live customer-visible message.
+ * Supports inline editing before sending, updates first_responded_at,
+ * and logs human review audit trail.
  */
 export async function approveAndSendDraft(
   messageId: string,
-  ticketId: string
+  ticketId: string,
+  editedText?: string
 ): Promise<ActionResult> {
   try {
     const supabase = await createClient();
@@ -442,10 +369,35 @@ export async function approveAndSendDraft(
       return { success: false, error: 'Unauthorized.' };
     }
 
-    // 1. Update message: clear is_ai_draft flag
+    // Fetch existing message to preserve metadata
+    const { data: existingMsg } = await supabase
+      .from('messages')
+      .select('metadata, body')
+      .eq('id', messageId)
+      .single();
+
+    const existingMeta = (existingMsg?.metadata || {}) as Record<string, unknown>;
+    const wasEdited = Boolean(editedText && editedText.trim() !== existingMsg?.body?.trim());
+
+    const updatePayload: { is_ai_draft: boolean; body?: string; metadata: Record<string, unknown> } = {
+      is_ai_draft: false,
+      metadata: {
+        ...existingMeta,
+        human_reviewed: true,
+        reviewed_by: user.id,
+        reviewed_at: new Date().toISOString(),
+        was_edited_by_agent: wasEdited,
+      },
+    };
+
+    if (editedText && editedText.trim().length > 0) {
+      updatePayload.body = editedText.trim();
+    }
+
+    // 1. Update message: clear is_ai_draft flag, update body if edited
     const { error: msgUpdateError } = await supabase
       .from('messages')
-      .update({ is_ai_draft: false })
+      .update(updatePayload)
       .eq('id', messageId);
 
     if (msgUpdateError) {
@@ -476,7 +428,7 @@ export async function approveAndSendDraft(
           actor_id: user.id,
           action: 'status_changed',
           old_value: { status: ticket?.status },
-          new_value: { status: updates.status },
+          new_value: { status: updates.status, approved_ai_draft: true, was_edited: wasEdited },
         });
       }
     }
@@ -494,6 +446,32 @@ export async function approveAndSendDraft(
       error: err instanceof Error ? err.message : 'Failed to approve draft.',
     };
   }
+}
+
+/**
+ * Loads auto-reply configuration from app_settings
+ */
+export async function getAutoReplySettingsAction(): Promise<AutoReplyConfig> {
+  const supabase = await createClient();
+  return getAutoReplyConfig(supabase);
+}
+
+/**
+ * Updates auto-reply configuration in app_settings (Staff only)
+ */
+export async function updateAutoReplySettingsAction(
+  config: Partial<AutoReplyConfig>
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { success: false, error: 'Unauthorized.' };
+
+  const res = await updateAutoReplyConfig(supabase, config, user.id);
+  revalidatePath('/agent');
+  return res;
 }
 
 /**

@@ -101,8 +101,19 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
         return <Badge variant="destructive">Enterprise VIP</Badge>;
       case 'substantial':
         return <Badge variant="warning">Substantial Tier</Badge>;
+    }
+  };
+
+  const getCategoryBadgeVariant = (cat?: string) => {
+    switch (cat) {
+      case 'billing':
+        return 'destructive' as const;
+      case 'duplicate_question':
+        return 'warning' as const;
+      case 'feature_request':
+        return 'purple' as const;
       default:
-        return <Badge variant="outline">Small Tier</Badge>;
+        return 'default' as const;
     }
   };
 
@@ -175,6 +186,18 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
                 <StatusBadge status={ticket.status} />
                 <PriorityBadge priority={ticket.priority} />
                 {getTierBadge(ticket.customer?.tier)}
+                {(() => {
+                  const aiClass = (ticket.metadata as { ai_classification?: { category?: string; confidence?: number } })?.ai_classification;
+                  if (!aiClass?.category) return null;
+                  return (
+                    <Badge
+                      variant={getCategoryBadgeVariant(aiClass.category)}
+                      className="text-[10px] py-0 px-1.5 h-4 capitalize"
+                    >
+                      AI: {aiClass.category.replace('_', ' ')} ({Math.round((aiClass.confidence || 0.85) * 100)}%)
+                    </Badge>
+                  );
+                })()}
                 <span className="text-xs text-zinc-400 font-mono">#{ticket.id.slice(0, 8)}</span>
               </div>
               <h1 className="text-xl font-bold tracking-tight text-zinc-900">

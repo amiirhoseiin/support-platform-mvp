@@ -15,7 +15,16 @@ Instead of emails getting lost in a shared Gmail or conflicting across agents:
   - Exactly how many tickets are open right now.
   - The longest currently waiting ticket and who it belongs to (so you can answer *"Are we slow?"* honestly to any client).
   - Which high-value accounts need immediate attention.
-- **AI-Assisted Drafting (Human-in-the-Loop)**: Rather than an unvetted chatbot hallucinating incorrect answers to paying customers, the AI acts as an internal copilot. It reads the issue, writes a polite draft for the agent, and waits for human approval before sending.
+- **AI-Assisted Drafting & Classification (Human-in-the-Loop)**: Rather than an unvetted chatbot hallucinating incorrect answers to paying customers, the AI acts as an internal copilot:
+  - Automatically classifies incoming tickets into 4 categories (`duplicate_question`, `billing`, `bug`, `feature_request`).
+  - Retrieves similar solved tickets strictly scoped to the *same customer's history* (tenant-scoped RAG).
+  - Presents agents with: *"This is a suggested reply. Edit it or approve it."*, allowing inline edits before approving.
+  - Optional auto-reply setting (disabled by default) that strictly excludes billing, bugs, and security, and requires high confidence ($\ge 85\%$).
+  - Never auto-closes tickets, and provides human escape hatches.
+- **Explicit Ticket Assignments & Shift Handoffs**:
+  - Agents can self-assign tickets with one click.
+  - The founder can assign tickets to any agent, highlighted with a purple badge and VIP priority alert.
+  - An interactive notification drawer and team audit stream keeps everyone updated without third-party email noise.
 - **Ironclad Privacy Guaranteed at the Database Level**: A customer can *never* view another customer's ticket under any circumstance. Even if there were a bug in the website code, the database physically refuses to return data belonging to another tenant.
 
 ---
@@ -30,10 +39,11 @@ Instead of emails getting lost in a shared Gmail or conflicting across agents:
 ### What Agents Mike & Anna Do on Monday:
 1. **Queue Prioritization**: Agents log in at `/agent`. The queue is automatically ordered from top to bottom by contract tier and longest wait time. They always work from the top ticket down.
 2. **Context on One Screen**: Opening a ticket reveals the customer's plan, contact info, past messages, and the entire audit trail of status changes without switching tabs.
-3. **Drafting Replies Faster**: 
-   - The agent can click **"Generate AI Draft"**. The system drafts a polite response addressing the exact problem.
-   - The agent reviews it, clicks **"Approve & Send"**, and the ticket automatically marks `first_responded_at` and moves to `in_progress`.
-4. **Handoffs & Collaboration**: If Mike needs to flag an issue for Anna or you (the founder), he checks **"Send as Internal Note"**. The note turns amber and is locked to staff only—the customer never sees it.
+3. **AI Copilot Review**:
+   - The ticket displays the AI's classification category, confidence percentage, and similar past solutions for context.
+   - The banner instructs: *"This is a suggested reply. Edit it or approve it."*
+   - The agent can edit the suggested response inline directly in the box, or click **"Approve & Send"** to dispatch it immediately.
+4. **Handoffs & Collaboration**: If Mike needs to flag an issue for Anna or you (the founder), he checks **"Send as Internal Note"**. The note turns amber and is locked to staff only—the customer never sees it. He can also reassign or assign tickets directly.
 5. **Resolving**: When finished, clicking **"Mark Resolved"** timestamps the resolution and removes it from the active queue.
 
 ---
@@ -44,9 +54,8 @@ Instead of emails getting lost in a shared Gmail or conflicting across agents:
 
 1. **No Inbound Email Ingestion**: Customers must submit requests via the web portal. If a customer emails `support@company.com`, it will not automatically convert into a ticket in this version.
 2. **Text-Only Communication (No File Attachments)**: Customers and agents cannot upload screenshots, PDFs, or log files directly into the thread. They must paste error logs or link to shared cloud storage (e.g., Google Drive, Loom).
-3. **No Agent Concurrency Lock ("Collision Avoidance")**: If Mike and Anna open the exact same ticket at the exact same minute, the system does not show a "Mike is currently typing" indicator. They must coordinate via internal notes or verbal communication.
-4. **Shared Queue (No Round-Robin Auto-Assignment)**: Tickets are pulled from the prioritized queue rather than automatically assigned to individual agent inboxes.
-5. **Single AI Draft at a Time**: The AI generates one draft per review cycle. It does not perform automated multi-turn chat dialogues.
+3. **No Agent Concurrency Lock ("Collision Avoidance")**: If Mike and Anna open the exact same ticket at the exact same minute, the system does not show a "Mike is currently typing" indicator. They coordinate via internal notes or assignment badges.
+4. **No Automated Ticket Escalation Rules**: Escalations are driven by queue sorting and human assignment rather than automated cron triggers.
 
 ---
 

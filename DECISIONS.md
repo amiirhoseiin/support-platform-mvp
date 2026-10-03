@@ -64,3 +64,17 @@
 * **Alternative Considered:** Sending external emails or Slack webhooks for every internal note and assignment.
 * **Trade-off Accepted:** Team members must be logged into the support platform to see badges and alerts, but it avoids webhook configuration overhead, spam fatigue, and credential leaks.
 
+**11. Decoupled AI Copilot, Prompt Injection Defense, Tenant-Scoped RAG, and Fail-Closed Auto-Reply Safety Policy**
+* **Decision:** Implement a layered, tenant-isolated AI Copilot architecture using Google Gemini (`gemini-flash-latest` / `gemini-2.5-flash-lite`) abstracted behind a pluggable `AiProviderInterface`.
+  - **Classification & Explainability:** Incoming tickets are automatically classified into 4 domain categories (`duplicate_question`, `billing`, `bug`, `feature_request`). The agent view explicitly surfaces: *"This is a suggested reply. Edit it or approve it."*, displaying the confidence percentage, classification, and similar solved tickets used for context.
+  - **Strict Tenant Isolation at the Data Layer:** Similar solved tickets for few-shot context retrieval (RAG) are strictly filtered by `.eq('customer_id', customerId)` at the SQL query level before any LLM prompt is constructed. Cross-tenant ticket lookup is mathematically blocked.
+  - **Prompt Injection Defense:** All customer input (subject, description) is treated as untrusted data, stripped of dangerous markup, wrapped within `<untrusted_customer_input>` boundaries, and prohibited from modifying system directives or escalating privileges.
+  - **Fail-Closed Auto-Reply Policy:** Auto-reply is disabled by default in `public.app_settings`. Even when enabled, auto-reply is strictly limited to low-risk categories (`duplicate_question`, `feature_request`) with high confidence ($\ge 0.85$). `billing`, security, and bugs *always* require human review. AI is never permitted to auto-close tickets (status changes to `in_progress`, never `resolved`). Every auto-reply includes an explicit human escape hatch. If the AI provider fails or times out, the ticket is routed directly to the human queue without silent drops.
+  - **Agent Sovereignty:** The agent can freely edit the suggested draft inline before approving, discard the draft, or write an internal note.
+* **Reason:** In B2B SaaS, hallucinating billing promises or leaking another customer's architecture details is catastrophic for trust and legal compliance. By enforcing tenant boundaries at the SQL level and making all automated responses opt-in with strict categorical disqualifications, we protect the business while saving agents time on repetitive onboarding and duplicate questions.
+* **Alternative Considered:**
+  1. *Global RAG across all customers:* Highly risky; leaks proprietary workflow configurations and data between competing tenants.
+  2. *Autonomous auto-resolution (AI closing tickets without human approval):* Extremely dangerous in an MVP; leads to customer frustration if the issue was misunderstood.
+  3. *Tightly coupling code to OpenAI/Anthropic SDKs:* Makes provider migrations costly and risks vendor lock-in.
+* **Trade-off Accepted:** High precision over high automation volume. Some tickets that *could* have been auto-replied will require human eyes because confidence was 0.82 or classified as a bug, but zero customer data leaks and zero billing accidents occur.
+

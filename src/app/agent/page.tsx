@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Ticket, UserProfile } from '@/types/database';
+import { AutoReplySettingsTrigger } from '@/components/agent/AutoReplySettingsTrigger';
 import {
   Inbox,
   Clock,
@@ -204,6 +205,19 @@ export default async function AgentQueuePage({
     }
   };
 
+  const getCategoryBadgeVariant = (cat?: string) => {
+    switch (cat) {
+      case 'billing':
+        return 'destructive' as const;
+      case 'duplicate_question':
+        return 'warning' as const;
+      case 'feature_request':
+        return 'purple' as const;
+      default:
+        return 'outline' as const;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 flex flex-col">
       <Navbar user={profile as UserProfile} />
@@ -230,8 +244,11 @@ export default async function AgentQueuePage({
             </p>
           </div>
 
-          {/* Filter Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-zinc-200/70 p-1 rounded-lg text-xs font-medium">
+          <div className="flex flex-wrap items-center gap-2">
+            <AutoReplySettingsTrigger currentUserRole={profile.role} />
+
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-zinc-200/70 p-1 rounded-lg text-xs font-medium">
             <Link
               href="/agent"
               className={`px-3 py-1.5 rounded-md transition-all ${
@@ -272,6 +289,7 @@ export default async function AgentQueuePage({
             >
               Resolved ({resolvedTickets.length})
             </Link>
+          </div>
           </div>
         </div>
 
@@ -374,17 +392,32 @@ export default async function AgentQueuePage({
 
                           {/* Subject & Description */}
                           <td className="px-6 py-4 max-w-md">
-                            <Link
-                              href={`/agent/${ticket.id}`}
-                              className="block group-hover:text-blue-600 transition-colors"
-                            >
-                              <span className="font-semibold text-sm text-zinc-900 block truncate">
-                                {ticket.subject}
-                              </span>
-                              <p className="text-xs text-zinc-500 line-clamp-1 mt-0.5">
-                                {ticket.description}
-                              </p>
-                            </Link>
+                            {(() => {
+                              const aiClass = (ticket.metadata as { ai_classification?: { category?: string } })?.ai_classification;
+                              return (
+                                <Link
+                                  href={`/agent/${ticket.id}`}
+                                  className="block group-hover:text-blue-600 transition-colors"
+                                >
+                                  <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                    <span className="font-semibold text-sm text-zinc-900 truncate">
+                                      {ticket.subject}
+                                    </span>
+                                    {aiClass?.category && (
+                                      <Badge
+                                        variant={getCategoryBadgeVariant(aiClass.category)}
+                                        className="text-[10px] py-0 px-1.5 h-4 capitalize shrink-0 font-medium"
+                                      >
+                                        {aiClass.category.replace('_', ' ')}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-zinc-500 line-clamp-1 mt-0.5">
+                                    {ticket.description}
+                                  </p>
+                                </Link>
+                              );
+                            })()}
                           </td>
 
                           {/* Priority */}

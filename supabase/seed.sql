@@ -37,7 +37,14 @@ INSERT INTO public.messages (ticket_id, sender_id, body, is_internal_note, is_ai
 ('a1111111-1111-1111-1111-111111111111', agent_mike_id, 'Investigating the connection pool limits on the replica databases right now.', false, false, NOW() - INTERVAL '2 hours 50 minutes', '{}'::jsonb),
 ('a1111111-1111-1111-1111-111111111111', agent_mike_id, '[URGENT] Sarah, can you check the AWS dashboard? I think we hit the IOPS limit on their tenant.', true, false, NOW() - INTERVAL '1 hour', '{}'::jsonb),
 ('b2222222-2222-2222-2222-222222222222', founder_id, '[AI Summary]: Customer wants to change their legal company name from "Novin" to "Novin Tech" on monthly invoices, and also update their national ID.', true, false, NOW() - INTERVAL '45 minutes', '{"source": "ai_agent"}'::jsonb),
-('b2222222-2222-2222-2222-222222222222', founder_id, 'سلام. درخواست شما دریافت شد. لطفاً شناسه ملی جدید را ارسال کنید تا اطلاعات حقوقی فاکتور شما را در سیستم بروزرسانی کنم.', false, true, NOW() - INTERVAL '10 minutes', '{"ai_model": "gemini-1.5-flash", "detected_language": "fa"}'::jsonb);
+('b2222222-2222-2222-2222-222222222222', founder_id, 'سلام. درخواست شما دریافت شد. لطفاً شناسه ملی جدید را ارسال کنید تا اطلاعات حقوقی فاکتور شما را در سیستم بروزرسانی کنم.', false, true, NOW() - INTERVAL '10 minutes', '{"ai_model": "gemini-flash-latest", "detected_language": "fa"}'::jsonb),
+('c3333333-3333-3333-3333-333333333333', agent_anna_id, 'Hi! You can invite your co-founder by going to Settings > Team Members > Invite, entering their email, and selecting their permission role.', false, false, NOW() - INTERVAL '3 days 20 hours', '{}'::jsonb);
+
+INSERT INTO public.app_settings (key, value)
+VALUES (
+  'auto_reply',
+  '{"enabled": false, "min_confidence": 0.85, "allowed_categories": ["duplicate_question", "feature_request"], "excluded_categories": ["billing", "security", "bug"]}'::jsonb
+) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 
 INSERT INTO public.ticket_events (ticket_id, actor_id, action, old_value, new_value, created_at) VALUES
