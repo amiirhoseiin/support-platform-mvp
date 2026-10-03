@@ -5,18 +5,35 @@ import { useRef, useState, useTransition } from 'react';
 import { sendMessage, generateAiDraft } from '@/actions/ticketActions';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Send, Lock, Sparkles, Loader2, AlertCircle, MessageSquare } from 'lucide-react';
+import { Send, Lock, Sparkles, Loader2, AlertCircle, MessageSquare, UserCheck, AtSign } from 'lucide-react';
+
+interface StaffUser {
+  id: string;
+  name: string;
+  role: 'agent' | 'founder';
+}
 
 interface AgentMessageFormProps {
   ticketId: string;
+  staffMembers?: StaffUser[];
+  currentUserId?: string;
 }
 
-export function AgentMessageForm({ ticketId }: AgentMessageFormProps) {
+export function AgentMessageForm({
+  ticketId,
+  staffMembers = [],
+  currentUserId,
+}: AgentMessageFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isInternalNote, setIsInternalNote] = useState(false);
+  const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [isPending, startTransition] = useTransition();
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const selectedMember = staffMembers.find((m) => m.id === selectedTargetId);
+  const selectedTargetName = selectedMember ? selectedMember.name : '';
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -27,11 +44,17 @@ export function AgentMessageForm({ ticketId }: AgentMessageFormProps) {
     formData.append('ticketId', ticketId);
     formData.append('isInternalNote', isInternalNote ? 'true' : 'false');
 
+    if (isInternalNote && selectedTargetId) {
+      formData.append('targetStaffId', selectedTargetId);
+      formData.append('targetStaffName', selectedTargetName);
+    }
+
     startTransition(async () => {
       const result = await sendMessage(formData);
       if (result.success) {
         formRef.current?.reset();
         setIsInternalNote(false);
+        setSelectedTargetId('');
       } else {
         setError(result.error || 'Failed to send message.');
       }
@@ -51,6 +74,18 @@ export function AgentMessageForm({ ticketId }: AgentMessageFormProps) {
     } finally {
       setIsGeneratingAi(false);
     }
+  };
+
+  const handleInsertMention = (member: StaffUser) => {
+    if (!textareaRef.current) return;
+    const mentionText = `@${member.name.split(' ')[0]} `;
+    setSelectedTargetId(member.id);
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentVal = textarea.value;
+    textarea.value = currentVal.substring(0, start) + mentionText + currentVal.substring(end);
+    textarea.focus();
   };
 
   return (
@@ -78,7 +113,7 @@ export function AgentMessageForm({ ticketId }: AgentMessageFormProps) {
           <span className="text-zinc-400 text-xs">|</span>
           <span className="text-[11px] text-zinc-500">
             {isInternalNote
-              ? 'Only visible to agents and founder. Never seen by customer.'
+              ? 'Only visible to team. Never seen by customer.'
               : 'Will be sent directly to customer portal.'}
           </span>
         </div>
@@ -113,12 +148,56 @@ export function AgentMessageForm({ ticketId }: AgentMessageFormProps) {
         </div>
       )}
 
+      {/* Internal note target recipient selector */}
+      {isInternalNote && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-lg bg-amber-100/70 border border-amber-200 text-xs">
+          <div className="flex items-center gap-2">
+            <UserCheck className="h-4 w-4 text-amber-800 shrink-0" />
+            <span className="font-semibold text-amber-950">Direct Note To:</span>
+            <select
+              value={selectedTargetId}
+              onChange={(e) => setSelectedTargetId(e.target.value)}
+              className="h-7 rounded border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            >
+              <option value="">All Staff (General Note)</option>
+              {staffMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} {m.role === 'founder' ? '(Founder)' : '(Support)'}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Quick mention pills */}
+          {staffMembers.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] text-amber-800 font-medium flex items-center gap-0.5">
+                <AtSign className="h-3 w-3" /> Quick:
+              </span>
+              {staffMembers
+                .filter((m) => m.id !== currentUserId)
+                .map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => handleInsertMention(m)}
+                    className="inline-flex items-center rounded bg-amber-200/80 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-300 transition-colors"
+                  >
+                    @{m.name.split(' ')[0]}
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-3">
         <Textarea
+          ref={textareaRef}
           name="body"
           placeholder={
             isInternalNote
-              ? 'Add private technical notes, troubleshooting steps, or instructions for colleagues...'
+              ? 'Add private technical notes, handoff details, or mention a colleague...'
               : 'Write your professional response to the customer...'
           }
           rows={4}
@@ -137,7 +216,10 @@ export function AgentMessageForm({ ticketId }: AgentMessageFormProps) {
             <input
               type="checkbox"
               checked={isInternalNote}
-              onChange={(e) => setIsInternalNote(e.target.checked)}
+              onChange={(e) => {
+                setIsInternalNote(e.target.checked);
+                if (!e.target.checked) setSelectedTargetId('');
+              }}
               disabled={isPending}
               className="h-4 w-4 rounded border-zinc-300 text-amber-600 focus:ring-amber-500"
             />
@@ -168,7 +250,9 @@ export function AgentMessageForm({ ticketId }: AgentMessageFormProps) {
             ) : isInternalNote ? (
               <>
                 <Lock className="h-3.5 w-3.5" />
-                <span>Add Internal Note</span>
+                <span>
+                  {selectedTargetName ? `Add Note for ${selectedTargetName}` : 'Add Internal Note'}
+                </span>
               </>
             ) : (
               <>

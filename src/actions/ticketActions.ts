@@ -111,6 +111,8 @@ export async function sendMessage(formData: FormData): Promise<ActionResult<{ me
     const ticketId = (formData.get('ticketId') as string)?.trim();
     const body = (formData.get('body') as string)?.trim();
     const isInternalNote = formData.get('isInternalNote') === 'true';
+    const targetStaffId = (formData.get('targetStaffId') as string)?.trim() || null;
+    const targetStaffName = (formData.get('targetStaffName') as string)?.trim() || null;
 
     if (!ticketId) {
       return { success: false, error: 'Ticket ID is required.' };
@@ -118,6 +120,12 @@ export async function sendMessage(formData: FormData): Promise<ActionResult<{ me
 
     if (!body || body.length === 0) {
       return { success: false, error: 'Message body cannot be empty.' };
+    }
+
+    const metadata: Record<string, unknown> = {};
+    if (isInternalNote && targetStaffId) {
+      metadata.directed_to_id = targetStaffId;
+      metadata.directed_to_name = targetStaffName;
     }
 
     // 1. Insert message
@@ -129,6 +137,7 @@ export async function sendMessage(formData: FormData): Promise<ActionResult<{ me
         body,
         is_internal_note: isInternalNote,
         is_ai_draft: false,
+        metadata,
       })
       .select('id')
       .single();
@@ -144,7 +153,11 @@ export async function sendMessage(formData: FormData): Promise<ActionResult<{ me
         ticket_id: ticketId,
         actor_id: user.id,
         action: 'note_added',
-        new_value: { is_internal_note: true },
+        new_value: {
+          is_internal_note: true,
+          directed_to_id: targetStaffId,
+          directed_to_name: targetStaffName,
+        },
       });
     }
 
@@ -607,30 +620,59 @@ export async function getStaffNotifications(): Promise<StaffNotificationItem[]> 
 
     if (profile?.role !== 'agent' && profile?.role !== 'founder') return [];
 
+    const isFounder = profile.role === 'founder';
     const items: StaffNotificationItem[] = [];
 
     // 1. Internal notes by other colleagues
+    // Founder: sees all internal notes across all tickets.
+    // Agent: ONLY sees notes for tickets they own, notes directed to them, or unassigned pool notes.
     const { data: internalNotes } = await supabase
       .from('messages')
-      .select('id, ticket_id, body, created_at, sender:sender_id(name, role), ticket:ticket_id(subject)')
+      .select('id, ticket_id, body, created_at, metadata, sender:sender_id(id, name, role), ticket:ticket_id(subject, assigned_agent_id)')
       .eq('is_internal_note', true)
       .neq('sender_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(6);
+      .limit(12);
 
     if (internalNotes) {
       internalNotes.forEach((n) => {
-        const senderObj = (Array.isArray(n.sender) ? n.sender[0] : n.sender) as { name?: string } | null;
-        const ticketObj = (Array.isArray(n.ticket) ? n.ticket[0] : n.ticket) as { subject?: string } | null;
+        const senderObj = (Array.isArray(n.sender) ? n.sender[0] : n.sender) as { id?: string; name?: string; role?: string } | null;
+        const ticketObj = (Array.isArray(n.ticket) ? n.ticket[0] : n.ticket) as { subject?: string; assigned_agent_id?: string | null } | null;
+        const meta = (n.metadata || {}) as { directed_to_id?: string; directed_to_name?: string };
+
+        // PERMISSION & SCOPING FILTER:
+        // Founder has executive access to all company notes.
+        // Agent only receives notes for tickets they own, directed to them, or unassigned queue.
+        // Agent does NOT receive notifications for notes founder/agents wrote for other agents' tickets!
+        if (!isFounder) {
+          const isAssignedToMe = ticketObj?.assigned_agent_id === user.id;
+          const isDirectedToMe = meta.directed_to_id === user.id;
+          const isUnassignedPool = !ticketObj?.assigned_agent_id;
+          const isMentioned = profile.name && n.body.toLowerCase().includes(profile.name.toLowerCase().split(' ')[0]);
+
+          if (!isAssignedToMe && !isDirectedToMe && !isUnassignedPool && !isMentioned) {
+            return; // Skip note from other agent's ticket
+          }
+        }
+
+        const isDirectedToMe = meta.directed_to_id === user.id;
+        const isFromFounder = senderObj?.role === 'founder';
         const isMention =
           profile.name &&
           n.body.toLowerCase().includes(profile.name.toLowerCase().split(' ')[0]);
-        const isUrgent = n.body.toLowerCase().includes('urgent') || Boolean(isMention);
+        const isUrgent = n.body.toLowerCase().includes('urgent') || Boolean(isMention) || Boolean(isDirectedToMe);
+
+        let noteTitle = `${senderObj?.name || 'Colleague'} left an internal note`;
+        if (isDirectedToMe) {
+          noteTitle = `🎯 ${senderObj?.name || 'Colleague'} left a note for YOU`;
+        } else if (isFromFounder && !isFounder) {
+          noteTitle = `👑 Founder note on your ticket`;
+        }
 
         items.push({
           id: `note-${n.id}`,
           type: 'internal_note',
-          title: `${senderObj?.name || 'Colleague'} left an internal note`,
+          title: noteTitle,
           description: `"${n.body.length > 90 ? n.body.slice(0, 90) + '...' : n.body}" on ${ticketObj?.subject || 'Ticket'}`,
           ticketId: n.ticket_id,
           createdAt: n.created_at,

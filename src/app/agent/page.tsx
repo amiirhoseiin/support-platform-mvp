@@ -114,24 +114,56 @@ export default async function AgentQueuePage({
     displayTickets = resolvedTickets;
   }
 
-  // Fetch recent internal notes across team for the Staff Information Feed
+  const isFounder = profile.role === 'founder';
+
+  // Fetch recent internal notes with ticket and metadata
   const { data: recentInternalNotesData } = await supabase
     .from('messages')
-    .select('id, ticket_id, body, created_at, sender:sender_id(name, role), ticket:ticket_id(subject)')
+    .select('id, ticket_id, body, created_at, metadata, sender:sender_id(id, name, role), ticket:ticket_id(subject, assigned_agent_id)')
     .eq('is_internal_note', true)
     .order('created_at', { ascending: false })
-    .limit(5);
+    .limit(20);
 
-  const recentInternalNotes = recentInternalNotesData || [];
+  // Filter notes based on role & permissions:
+  // - Founder: executive access to all internal notes across all tickets.
+  // - Agent: ONLY sees notes for tickets they own, unassigned tickets, or notes directed to them.
+  // Notes on tickets assigned to another agent are filtered out.
+  const allInternalNotes = recentInternalNotesData || [];
+  const recentInternalNotes = isFounder
+    ? allInternalNotes.slice(0, 5)
+    : allInternalNotes
+        .filter((note) => {
+          const ticketObj = (Array.isArray(note.ticket) ? note.ticket[0] : note.ticket) as { assigned_agent_id?: string | null } | null;
+          const meta = (note.metadata || {}) as { directed_to_id?: string };
+          const isAssignedToMe = ticketObj?.assigned_agent_id === user.id;
+          const isDirectedToMe = meta.directed_to_id === user.id;
+          const isUnassignedPool = !ticketObj?.assigned_agent_id;
+          const isMentioned =
+            profile.name &&
+            note.body.toLowerCase().includes(profile.name.toLowerCase().split(' ')[0]);
 
-  // Fetch recent team audit events (handoffs, reassignments, status changes)
+          return isAssignedToMe || isDirectedToMe || isUnassignedPool || isMentioned;
+        })
+        .slice(0, 5);
+
+  // Fetch recent team audit events
   const { data: recentEventsData } = await supabase
     .from('ticket_events')
-    .select('id, ticket_id, action, created_at, old_value, new_value, actor:actor_id(name, role), ticket:ticket_id(subject)')
+    .select('id, ticket_id, action, created_at, old_value, new_value, actor:actor_id(name, role), ticket:ticket_id(subject, assigned_agent_id)')
     .order('created_at', { ascending: false })
-    .limit(6);
+    .limit(20);
 
-  const recentEvents = recentEventsData || [];
+  const allEvents = recentEventsData || [];
+  const recentEvents = isFounder
+    ? allEvents.slice(0, 6)
+    : allEvents
+        .filter((evt) => {
+          const ticketObj = (Array.isArray(evt.ticket) ? evt.ticket[0] : evt.ticket) as { assigned_agent_id?: string | null } | null;
+          const isAssignedToMe = ticketObj?.assigned_agent_id === user.id;
+          const isUnassignedPool = !ticketObj?.assigned_agent_id;
+          return isAssignedToMe || isUnassignedPool;
+        })
+        .slice(0, 6);
 
   const formatWaitTime = (createdAt: string) => {
     const diffMs = Math.max(0, Date.now() - new Date(createdAt).getTime());
@@ -410,27 +442,34 @@ export default async function AgentQueuePage({
                   </div>
                   <div>
                     <CardTitle className="text-sm font-semibold text-zinc-900">
-                      Recent Internal Notes
+                      {isFounder ? 'Company-Wide Internal Notes' : 'Your Relevant Internal Notes'}
                     </CardTitle>
                     <CardDescription className="text-[11px]">
-                      Colleague handoffs, diagnostics & private discussions
+                      {isFounder
+                        ? 'Executive view across all tickets and staff'
+                        : 'Notes on your assigned tickets, mentions & shared queue'}
                     </CardDescription>
                   </div>
                 </div>
-                <Badge variant="warning" className="text-[10px]">
-                  Team Only
+                <Badge variant={isFounder ? 'purple' : 'warning'} className="text-[10px]">
+                  {isFounder ? 'Founder View' : 'Your Scope'}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="p-0 divide-y divide-zinc-100 max-h-[300px] overflow-y-auto">
               {recentInternalNotes.length === 0 ? (
                 <div className="p-6 text-center text-xs text-zinc-400">
-                  No internal notes recorded yet.
+                  {isFounder
+                    ? 'No internal notes recorded yet.'
+                    : 'No internal notes on your tickets or addressed to you.'}
                 </div>
               ) : (
                 recentInternalNotes.map((note) => {
                   const senderObj = (Array.isArray(note.sender) ? note.sender[0] : note.sender) as { name?: string; role?: string } | null;
                   const ticketObj = (Array.isArray(note.ticket) ? note.ticket[0] : note.ticket) as { subject?: string } | null;
+                  const meta = (note.metadata || {}) as { directed_to_id?: string; directed_to_name?: string };
+                  const isDirectedToMe = meta.directed_to_id === user.id;
+                  const isFromFounder = senderObj?.role === 'founder';
 
                   return (
                     <Link
@@ -439,9 +478,26 @@ export default async function AgentQueuePage({
                       className="block p-3.5 hover:bg-zinc-50 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="text-xs font-semibold text-zinc-900">
-                          {senderObj?.name || 'Staff Member'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-semibold text-zinc-900">
+                            {senderObj?.name || 'Staff Member'}
+                          </span>
+                          {isFromFounder && (
+                            <Badge variant="purple" className="text-[9px] py-0 px-1 h-3.5">
+                              Founder
+                            </Badge>
+                          )}
+                          {isDirectedToMe && (
+                            <Badge variant="default" className="text-[9px] py-0 px-1 h-3.5 bg-blue-600">
+                              For You
+                            </Badge>
+                          )}
+                          {meta.directed_to_name && !isDirectedToMe && (
+                            <Badge variant="outline" className="text-[9px] py-0 px-1 h-3.5 text-amber-900 border-amber-300">
+                              For: {meta.directed_to_name}
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-[10px] text-zinc-400 font-mono">
                           {new Date(note.created_at).toLocaleTimeString([], {
                             hour: '2-digit',
@@ -472,22 +528,24 @@ export default async function AgentQueuePage({
                   </div>
                   <div>
                     <CardTitle className="text-sm font-semibold text-zinc-900">
-                      Team Activity & Handoff Log
+                      {isFounder ? 'Team Activity & Handoff Log' : 'Your Activity & Handoff Stream'}
                     </CardTitle>
                     <CardDescription className="text-[11px]">
-                      Ticket assignments, status escalations and SLA events
+                      {isFounder
+                        ? 'Ticket assignments, status escalations and SLA events across company'
+                        : 'Handoffs and status events on your tickets & shared queue'}
                     </CardDescription>
                   </div>
                 </div>
                 <Badge variant="outline" className="text-[10px]">
-                  Audit Trail
+                  {isFounder ? 'Full Audit' : 'Your Scope'}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="p-0 divide-y divide-zinc-100 max-h-[300px] overflow-y-auto">
               {recentEvents.length === 0 ? (
                 <div className="p-6 text-center text-xs text-zinc-400">
-                  No recent audit activity.
+                  {isFounder ? 'No recent audit activity.' : 'No recent activity on your tickets.'}
                 </div>
               ) : (
                 recentEvents.map((evt) => {

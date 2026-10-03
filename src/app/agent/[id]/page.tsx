@@ -233,13 +233,21 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
 
                   // Staff Internal Note
                   if (message.is_internal_note) {
+                    const meta = (message.metadata || {}) as { directed_to_id?: string; directed_to_name?: string };
+                    const isSenderFounder = message.sender?.role === 'founder';
+                    const isDirectedToViewer = meta.directed_to_id === user.id;
+
                     return (
                       <div
                         key={message.id}
-                        className="rounded-xl border-2 border-amber-300/80 bg-amber-50/60 p-4 shadow-2xs space-y-2"
+                        className={`rounded-xl border-2 p-4 shadow-2xs space-y-2 ${
+                          isDirectedToViewer
+                            ? 'border-blue-400 bg-blue-50/50'
+                            : 'border-amber-300/80 bg-amber-50/60'
+                        }`}
                       >
                         <div className="flex items-center justify-between pb-2 border-b border-amber-200 text-xs">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-600 text-white">
                               <Lock className="h-3 w-3" />
                             </div>
@@ -249,6 +257,21 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
                             <Badge variant="warning" className="text-[10px] py-0 px-1.5 h-4">
                               INTERNAL NOTE
                             </Badge>
+                            {isSenderFounder && (
+                              <Badge variant="purple" className="text-[10px] py-0 px-1.5 h-4">
+                                Founder
+                              </Badge>
+                            )}
+                            {isDirectedToViewer && (
+                              <Badge variant="default" className="text-[10px] py-0 px-1.5 h-4 bg-blue-600 text-white">
+                                📌 Directed to You
+                              </Badge>
+                            )}
+                            {meta.directed_to_name && !isDirectedToViewer && (
+                              <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 text-amber-900 border-amber-300 bg-amber-100/60">
+                                🎯 For: {meta.directed_to_name}
+                              </Badge>
+                            )}
                           </div>
                           <span className="text-[11px] text-amber-700 font-mono">
                             {new Date(message.created_at).toLocaleTimeString('en-US', {
@@ -323,7 +346,11 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
 
             {/* Agent Message Form */}
             <div className="pt-2">
-              <AgentMessageForm ticketId={ticket.id} />
+              <AgentMessageForm
+                ticketId={ticket.id}
+                staffMembers={staffMembers}
+                currentUserId={user.id}
+              />
             </div>
           </div>
 
