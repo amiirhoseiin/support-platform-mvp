@@ -22,6 +22,7 @@ import {
   History,
   MessageSquare,
   Sparkles,
+  UserCheck,
 } from 'lucide-react';
 
 interface PageProps {
@@ -105,30 +106,66 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col">
-      <Navbar user={profile as UserProfile} />
+  const latestAssignEvent = events.find((e) => e.action === 'assigned');
+    const isAssignedByFounder =
+      latestAssignEvent?.actor?.role === 'founder' ||
+      Boolean((latestAssignEvent?.new_value as { assigned_by_founder?: boolean } | null)?.assigned_by_founder);
+    const isAssignedToMe = ticket.assigned_agent_id === user.id;
 
-      <main className="mx-auto max-w-6xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-6 flex-1">
-        {/* Navigation & Status bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <Link
-            href="/agent"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Unified Queue
-          </Link>
+    return (
+      <div className="min-h-screen bg-zinc-50 flex flex-col">
+        <Navbar user={profile as UserProfile} />
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <TicketAssigneeSelector
-              ticketId={ticket.id}
-              currentAssigneeId={ticket.assigned_agent_id}
-              staffMembers={staffMembers}
-            />
-            <TicketStatusActions ticketId={ticket.id} currentStatus={ticket.status} />
+        <main className="mx-auto max-w-6xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-6 flex-1">
+          {/* Navigation & Status bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <Link
+              href="/agent"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 transition-colors"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to Unified Queue
+            </Link>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <TicketAssigneeSelector
+                ticketId={ticket.id}
+                currentAssigneeId={ticket.assigned_agent_id}
+                staffMembers={staffMembers}
+                currentUserRole={profile.role}
+                currentUserId={user.id}
+              />
+              <TicketStatusActions ticketId={ticket.id} currentStatus={ticket.status} />
+            </div>
           </div>
-        </div>
+
+          {/* Prominent notice if Founder assigned this ticket to the agent */}
+          {isAssignedToMe && isAssignedByFounder && profile.role === 'agent' && (
+            <div className="rounded-xl border border-purple-200 bg-purple-50/80 p-3.5 shadow-2xs flex items-center justify-between gap-3 text-xs text-purple-900">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white font-bold text-xs shrink-0">
+                  👑
+                </div>
+                <div>
+                  <p className="font-bold text-purple-950">Direct Founder Assignment</p>
+                  <p className="text-[11px] text-purple-800">
+                    Founder Sarah assigned this ticket directly to you for follow-up.
+                  </p>
+                </div>
+              </div>
+              <Badge variant="purple" className="shrink-0 text-[10px]">
+                Priority Attention
+              </Badge>
+            </div>
+          )}
+
+          {/* Prominent indicator if ticket is assigned to current user */}
+          {isAssignedToMe && (!isAssignedByFounder || profile.role === 'founder') && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 shadow-2xs flex items-center gap-2 text-xs text-blue-900 font-medium">
+              <UserCheck className="h-4 w-4 text-blue-600 shrink-0" />
+              <span>You are the designated owner of this ticket.</span>
+            </div>
+          )}
 
         {/* Ticket Header & Customer Profile Banner */}
         <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm space-y-4">

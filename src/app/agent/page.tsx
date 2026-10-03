@@ -165,6 +165,23 @@ export default async function AgentQueuePage({
         })
         .slice(0, 6);
 
+  // Fetch tickets that were assigned by the founder for prominent badge notice
+  const { data: founderAssignEvents } = await supabase
+    .from('ticket_events')
+    .select('ticket_id, new_value, actor:actor_id(role)')
+    .eq('action', 'assigned');
+
+  const founderAssignedMap = new Set<string>();
+  if (founderAssignEvents) {
+    founderAssignEvents.forEach((evt) => {
+      const actorObj = (Array.isArray(evt.actor) ? evt.actor[0] : evt.actor) as { role?: string } | null;
+      const newVal = (evt.new_value || {}) as { assigned_by_founder?: boolean };
+      if (actorObj?.role === 'founder' || newVal.assigned_by_founder) {
+        founderAssignedMap.add(evt.ticket_id);
+      }
+    });
+  }
+
   const formatWaitTime = (createdAt: string) => {
     const diffMs = Math.max(0, Date.now() - new Date(createdAt).getTime());
     const mins = Math.floor(diffMs / (1000 * 60));
@@ -324,12 +341,18 @@ export default async function AgentQueuePage({
                       const isTopVip =
                         ticket.customer?.tier === 'enterprise' &&
                         ticket.status === 'open';
+                      const isMyTicket = ticket.assigned_agent_id === user.id;
+                      const isAssignedByFounder = founderAssignedMap.has(ticket.id);
 
                       return (
                         <tr
                           key={ticket.id}
-                          className={`transition-colors hover:bg-zinc-50/80 group ${
-                            isTopVip ? 'bg-amber-50/30' : ''
+                          className={`transition-colors group ${
+                            isMyTicket
+                              ? 'bg-blue-50/70 hover:bg-blue-100/70 border-l-4 border-l-blue-600'
+                              : isTopVip
+                              ? 'bg-amber-50/40 hover:bg-amber-50/70 border-l-4 border-l-amber-500'
+                              : 'hover:bg-zinc-50/80'
                           }`}
                         >
                           {/* Customer & Tier */}
@@ -376,9 +399,21 @@ export default async function AgentQueuePage({
 
                           {/* Assignee */}
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {ticket.assigned_agent ? (
+                            {isMyTicket ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-0.5 text-xs font-bold text-white shadow-2xs">
+                                  <UserCheck className="h-3 w-3" />
+                                  Assigned to You
+                                </span>
+                                {isAssignedByFounder && profile.role === 'agent' && (
+                                  <span className="inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-800 border border-purple-200">
+                                    👑 By Founder
+                                  </span>
+                                )}
+                              </div>
+                            ) : ticket.assigned_agent ? (
                               <div className="flex items-center gap-1.5 text-xs text-zinc-800 font-medium">
-                                <div className="h-2 w-2 rounded-full bg-blue-500" />
+                                <div className="h-2 w-2 rounded-full bg-zinc-400" />
                                 <span>{ticket.assigned_agent.name}</span>
                               </div>
                             ) : (

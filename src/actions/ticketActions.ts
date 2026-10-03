@@ -563,6 +563,29 @@ export async function assignTicket(
       .eq('id', ticketId)
       .single();
 
+    // PERMISSION ENFORCEMENT:
+    // Every agent can just assign a ticket to themselves (or unassign their own ticket).
+    // The founder can assign to anyone.
+    if (profile.role === 'agent') {
+      if (assignedAgentId !== null && assignedAgentId !== user.id) {
+        return {
+          success: false,
+          error: 'Permission denied: Support agents can only claim tickets for themselves. Only the founder can assign tickets to other colleagues.',
+        };
+      }
+
+      // If already assigned to someone else, an agent cannot unassign or take it over
+      if (
+        currentTicket?.assigned_agent_id &&
+        currentTicket.assigned_agent_id !== user.id
+      ) {
+        return {
+          success: false,
+          error: 'This ticket is already owned by another colleague. Only the founder can reassign it.',
+        };
+      }
+    }
+
     // Update ticket assigned_agent_id
     const { error: updateError } = await supabase
       .from('tickets')
@@ -573,13 +596,17 @@ export async function assignTicket(
       return { success: false, error: updateError.message };
     }
 
-    // Record 'assigned' event in ticket_events
+    // Record 'assigned' event in ticket_events with founder attribution
     await supabase.from('ticket_events').insert({
       ticket_id: ticketId,
       actor_id: user.id,
       action: 'assigned',
       old_value: { assigned_agent_id: currentTicket?.assigned_agent_id },
-      new_value: { assigned_agent_id: assignedAgentId },
+      new_value: {
+        assigned_agent_id: assignedAgentId,
+        assigned_by_role: profile.role,
+        assigned_by_founder: profile.role === 'founder',
+      },
     });
 
     revalidatePath(`/agent/${ticketId}`);
@@ -688,19 +715,45 @@ export async function getStaffNotifications(): Promise<StaffNotificationItem[]> 
       .eq('assigned_agent_id', user.id)
       .in('status', ['open', 'in_progress'])
       .order('created_at', { ascending: false })
-      .limit(4);
+      .limit(6);
 
-    if (myTickets) {
+    if (myTickets && myTickets.length > 0) {
+      // Check which tickets were assigned by the founder
+      const ticketIds = myTickets.map((t) => t.id);
+      const { data: assignEvents } = await supabase
+        .from('ticket_events')
+        .select('ticket_id, new_value, actor:actor_id(name, role)')
+        .in('ticket_id', ticketIds)
+        .eq('action', 'assigned')
+        .order('created_at', { ascending: false });
+
+      const founderAssignedTicketIds = new Set<string>();
+      if (assignEvents) {
+        assignEvents.forEach((evt) => {
+          const actorObj = (Array.isArray(evt.actor) ? evt.actor[0] : evt.actor) as { role?: string; name?: string } | null;
+          const newVal = (evt.new_value || {}) as { assigned_by_founder?: boolean };
+          if (actorObj?.role === 'founder' || newVal.assigned_by_founder) {
+            founderAssignedTicketIds.add(evt.ticket_id);
+          }
+        });
+      }
+
       myTickets.forEach((t) => {
         const customerObj = (Array.isArray(t.customer) ? t.customer[0] : t.customer) as { name?: string; tier?: string } | null;
+        const isFromFounder = founderAssignedTicketIds.has(t.id);
+
         items.push({
           id: `assigned-${t.id}`,
           type: 'assignment',
-          title: `Assigned to You: ${t.subject}`,
-          description: `Customer: ${customerObj?.name || 'Client'} (${customerObj?.tier?.toUpperCase() || 'NORMAL'} Tier) • Priority: ${t.priority}`,
+          title: isFromFounder
+            ? `👑 Founder Sarah assigned you a ticket!`
+            : `Assigned to You: ${t.subject}`,
+          description: isFromFounder
+            ? `Direct founder assignment for ${customerObj?.name || 'Client'} (${customerObj?.tier?.toUpperCase()} Tier). Priority action requested.`
+            : `Customer: ${customerObj?.name || 'Client'} (${customerObj?.tier?.toUpperCase() || 'NORMAL'} Tier) • Priority: ${t.priority}`,
           ticketId: t.id,
           createdAt: t.created_at,
-          isUrgent: t.priority === 'critical',
+          isUrgent: isFromFounder || t.priority === 'critical',
         });
       });
     }
