@@ -36,11 +36,14 @@
 * **Alternative Considered:** A simple CRUD structure where a ticket's status is merely overwritten upon update, and categories are stored as simple free-text strings.
 * **Trade-off Accepted:** This architecture increases the database storage footprint (as every status change creates a new row) and makes the analytical queries for the Founder Dashboard more complex. However, providing the founder with an irrefutable audit trail to answer "are we slow?" is absolutely worth the added query complexity.
 
-**7. AI Infrastructure & Cost Management (Burn Rate Control)**
-* **Decision:** Utilize Code Antigravity IDE alongside Working Buddy AI and Harness Open Source infrastructure for both development and production AI features, avoiding expensive frontier models like GPT-4o or Claude 3.5 Sonnet.
-* **Reason:** The prompt explicitly specifies "no budget for enterprise tooling". Generating polite support drafts and summarizing contexts does not require the complex reasoning capabilities of expensive premium models. By utilizing these highly cost-efficient, open-ecosystem tools, we reduce our AI token costs to effectively $0 for the MVP phase, keeping the startup's burn rate minimal while maintaining high developer velocity.
-* **Alternative Considered:** Paying for GitHub Copilot / Cursor and integrating OpenAI APIs, which introduces recurring subscription costs and unpredictable usage-based API fees.
-* **Trade-off Accepted:** We trade the absolute highest tier of linguistic nuance for a 99% cost reduction. The AI might occasionally sound slightly more generic, but because we implemented an "Agent-in-the-Loop" architecture (the AI only writes *drafts* that agents review), this is a completely acceptable and zero-risk trade-off.
+**7. AI Infrastructure, Architectural Reasoning & Zero-Cost Runtime Stack**
+* **Decision:** Split the AI strategy into two zero-cost pillars:
+  1. **Architectural Reasoning & Invariant Design:** Leverage **DeepSeek V4** for high-leverage architectural reasoning, evaluating database schema invariants, multi-tenant RLS policy proofs, crack-prevention failure vectors, and technical trade-off evaluation.
+  2. **Production Runtime & Copilot Drafts:** Utilize **Free tier Google Gemini in Antigravity** (`gemini-2.5-flash` / `gemini-1.5-flash`) for real-time ticket classification, tenant-scoped RAG, and agent reply drafting.
+* **Reason:** The prompt explicitly specifies "no budget for enterprise tooling". DeepSeek V4 provides frontier-grade technical reasoning, systems analysis, and architectural verification without commercial vendor lock-in or licensing costs. For runtime execution, Free Gemini in Antigravity delivers sub-second latency for lightweight customer support categorization and draft generation without consuming paid API credits, reducing recurring AI costs to effectively $0.
+* **Alternative Considered:** Paying for expensive proprietary models (OpenAI GPT-4o, Claude 3.5 Sonnet) or enterprise IDE subscriptions (Cursor, GitHub Copilot Enterprise), which introduce monthly per-seat fees and unpredictable token bills.
+* **Trade-off Accepted:** Free Gemini rate limits (RPM) require graceful fallback mechanisms. We accepted this trade-off by implementing a multi-model fallback cascade (`gemini-2.5-flash` -> `gemini-1.5-flash` -> `gemini-2.5-flash-lite`) and strict fail-closed routing to human triage if quotas or timeouts occur.
+
 
 
 **8. Security & Input Sanitization (Public Surface Vulnerabilities)**
@@ -65,7 +68,7 @@
 * **Trade-off Accepted:** Team members must be logged into the support platform to see badges and alerts, but it avoids webhook configuration overhead, spam fatigue, and credential leaks.
 
 **11. Decoupled AI Copilot, Prompt Injection Defense, Tenant-Scoped RAG, and Fail-Closed Auto-Reply Safety Policy**
-* **Decision:** Implement a layered, tenant-isolated AI Copilot architecture using Google Gemini (`gemini-flash-latest` / `gemini-2.5-flash-lite`) abstracted behind a pluggable `AiProviderInterface`.
+* **Decision:** Implement a layered, tenant-isolated AI Copilot architecture using Free tier Google Gemini in Antigravity (`gemini-2.5-flash` / `gemini-1.5-flash` / `gemini-2.5-flash-lite`) abstracted behind a pluggable `AiProviderInterface`, verified by DeepSeek V4 architectural reasoning.
   - **Classification & Explainability:** Incoming tickets are automatically classified into 4 domain categories (`duplicate_question`, `billing`, `bug`, `feature_request`). The agent view explicitly surfaces: *"This is a suggested reply. Edit it or approve it."*, displaying the confidence percentage, classification, and similar solved tickets used for context.
   - **Strict Tenant Isolation at the Data Layer:** Similar solved tickets for few-shot context retrieval (RAG) are strictly filtered by `.eq('customer_id', customerId)` at the SQL query level before any LLM prompt is constructed. Cross-tenant ticket lookup is mathematically blocked.
   - **Prompt Injection Defense:** All customer input (subject, description) is treated as untrusted data, stripped of dangerous markup, wrapped within `<untrusted_customer_input>` boundaries, and prohibited from modifying system directives or escalating privileges.
