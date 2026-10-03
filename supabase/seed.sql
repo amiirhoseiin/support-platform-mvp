@@ -11,13 +11,13 @@ DECLARE
   normal_client_id UUID := '66666666-6666-6666-6666-666666666666';
 BEGIN
 
-INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at) VALUES
-(founder_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'founder@company.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW()),
-(agent_mike_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mike@company.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW()),
-(agent_anna_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'anna@company.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW()),
-(vip_client_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cto@acmecorp.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW()),
-(persian_client_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@novintech.ir', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW()),
-(normal_client_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'hello@startup.io', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW());
+INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at, confirmation_token, recovery_token, email_change_token_new, email_change) VALUES
+(founder_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'founder@company.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW(), '', '', '', ''),
+(agent_mike_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mike@company.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW(), '', '', '', ''),
+(agent_anna_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'anna@company.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW(), '', '', '', ''),
+(vip_client_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cto@acmecorp.com', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW(), '', '', '', ''),
+(persian_client_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@novintech.ir', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW(), '', '', '', ''),
+(normal_client_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'hello@startup.io', crypt('demo123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, NOW(), NOW(), '', '', '', '');
 
 INSERT INTO public.users (id, email, name, role, tier, metadata) VALUES
 (founder_id, 'founder@company.com', 'Sarah (Founder)', 'founder', 'small', '{"timezone": "UTC"}'::jsonb),
