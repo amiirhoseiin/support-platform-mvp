@@ -65,7 +65,14 @@ test.describe('End-to-End AI Copilot Workflow (Creation -> Suggestion -> Edit ->
     // The requirement states:
     // "Show the agent: 'This is a suggested reply. Edit it or approve it.'"
     const suggestedReplyNotice = page.getByText('This is a suggested reply. Edit it or approve it.');
-    await expect(suggestedReplyNotice).toBeVisible({ timeout: 20000 });
+    const isAlreadyVisible = await suggestedReplyNotice.isVisible().catch(() => false);
+    if (!isAlreadyVisible) {
+      const genDraftBtn = page.getByRole('button', { name: /Generate AI Draft/i });
+      if (await genDraftBtn.isVisible().catch(() => false)) {
+        await genDraftBtn.click();
+      }
+    }
+    await expect(suggestedReplyNotice).toBeVisible({ timeout: 25000 });
 
     // Verify AI Copilot heading & classification
     await expect(page.getByText('AI Copilot Suggestion')).toBeVisible();

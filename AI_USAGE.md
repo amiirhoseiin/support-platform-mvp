@@ -34,4 +34,4 @@
 * **Replaceable Architecture:** The LLM engine implements `AiProviderInterface` and can be swapped with zero changes to business logic (`getAiProvider()` / `setAiProvider()`).
 * **Multi-Model Fallback:** Cascades gracefully (`gemini-flash-latest` → `gemini-2.5-flash-lite` → `gemini-3.8-flash`).
 * **Fail-Closed Fallback:** If all models fail, rate-limit, or time out, confidence drops to `0.0`, the ticket is safely routed to the human queue, and the creation flow completes without errors. No ticket is ever dropped.
-* **Auto-Reply Safety Policy:** Disabled by default in `public.app_settings`. Only permitted for low-risk categories (`duplicate_question`, `feature_request`) with confidence $\ge 0.85$. Billing, security, and bugs *always* require human review. AI is never allowed to auto-close a ticket (`in_progress`, never `resolved`).
+* **Auto-Reply Safety Policy:** Disabled by default in `public.app_settings`. Only permitted for low-risk categories (`duplicate_question`, `feature_request`) with confidence $\ge 0.85$. Billing, security, and bugs *always* require human review. AI is never allowed to auto-close a ticket (`in_progress`, never `resolved`).

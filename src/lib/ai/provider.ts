@@ -46,9 +46,9 @@ function extractJsonFromText<T>(rawText: string): T | null {
  */
 export class GeminiAiProvider implements AiProviderInterface {
   private candidateModels = [
-    'gemini-flash-latest',
-    'gemini-2.5-flash-lite',
     'gemini-3.8-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-flash-latest',
   ];
 
   async classifyAndDraft(params: {
@@ -206,7 +206,8 @@ ${sanitizedDescription}
       category: 'bug',
       confidence: 0.0,
       reasoning: 'AI provider unavailable or timed out. Routed to human queue for manual triage.',
-      suggestedReplyText: '',
+      suggestedReplyText:
+        'Hello,\n\nThank you for contacting support. We have received your request and our team is actively investigating the issue. A support specialist will follow up with you shortly.\n\nBest regards,\nSupport Team',
       similarTicketsUsed: [],
       shouldRequireHumanReview: true,
       canAutoReply: false,

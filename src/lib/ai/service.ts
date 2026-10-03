@@ -317,7 +317,7 @@ export async function triageTicketWithAi(
 
       const draftSenderId = staffUser?.id || ticket.assigned_agent_id || ticket.customer_id;
 
-      await supabase.from('messages').insert({
+      const { error: insertError } = await supabase.from('messages').insert({
         ticket_id: ticket.id,
         sender_id: draftSenderId,
         body: aiResult.suggestedReplyText.trim(),
@@ -333,6 +333,10 @@ export async function triageTicketWithAi(
           model: aiResult.provider,
         },
       });
+
+      if (insertError) {
+        console.error('Failed to insert AI draft message:', insertError.message);
+      }
     }
 
     return { success: true, autoReplied: false, result: aiResult };
