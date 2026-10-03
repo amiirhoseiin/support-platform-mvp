@@ -6,6 +6,9 @@
 
 ## 🚀 Live Demo & Accounts
 
+**Live Demo:** [https://support-platform-mvp.vercel.app/](https://support-platform-mvp.vercel.app/)  
+**Login Page:** [https://support-platform-mvp.vercel.app/login](https://support-platform-mvp.vercel.app/login)
+
 | Role | Email | Password | Surface & Access |
 | :--- | :--- | :--- | :--- |
 | **Enterprise VIP Customer** | `cto@acmecorp.com` | `demo123` | Customer Portal (`/customer`) |
