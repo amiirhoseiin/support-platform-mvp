@@ -18,6 +18,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Building2,
+  UserCheck,
+  UserX,
+  Lock,
+  Activity,
+  MessageSquare,
 } from 'lucide-react';
 
 export default async function AgentQueuePage({
@@ -47,7 +52,7 @@ export default async function AgentQueuePage({
     redirect('/login');
   }
 
-  // Fetch all tickets with joined customer info
+  // Fetch all tickets with joined customer info and assigned agent
   const { data: allTicketsData } = await supabase
     .from('tickets')
     .select('*, customer:customer_id(id, name, email, tier), assigned_agent:assigned_agent_id(id, name, email)')
@@ -63,7 +68,7 @@ export default async function AgentQueuePage({
     (t) => t.status === 'resolved' || t.status === 'closed'
   );
 
-  // Sorting: Crucial requirement:
+  // Sorting requirement:
   // Order by priority/tier first (enterprise/substantial first), then by oldest created_at (longest waiting)
   const tierWeights: Record<string, number> = {
     enterprise: 300,
@@ -97,8 +102,36 @@ export default async function AgentQueuePage({
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
 
-  const isResolvedView = filter === 'resolved';
-  const displayTickets = isResolvedView ? resolvedTickets : sortedOpenTickets;
+  const assignedToMe = sortedOpenTickets.filter((t) => t.assigned_agent_id === user.id);
+  const unassignedTickets = sortedOpenTickets.filter((t) => !t.assigned_agent_id);
+
+  let displayTickets: Ticket[] = sortedOpenTickets;
+  if (filter === 'assigned_me') {
+    displayTickets = assignedToMe;
+  } else if (filter === 'unassigned') {
+    displayTickets = unassignedTickets;
+  } else if (filter === 'resolved') {
+    displayTickets = resolvedTickets;
+  }
+
+  // Fetch recent internal notes across team for the Staff Information Feed
+  const { data: recentInternalNotesData } = await supabase
+    .from('messages')
+    .select('id, ticket_id, body, created_at, sender:sender_id(name, role), ticket:ticket_id(subject)')
+    .eq('is_internal_note', true)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  const recentInternalNotes = recentInternalNotesData || [];
+
+  // Fetch recent team audit events (handoffs, reassignments, status changes)
+  const { data: recentEventsData } = await supabase
+    .from('ticket_events')
+    .select('id, ticket_id, action, created_at, old_value, new_value, actor:actor_id(name, role), ticket:ticket_id(subject)')
+    .order('created_at', { ascending: false })
+    .limit(6);
+
+  const recentEvents = recentEventsData || [];
 
   const formatWaitTime = (createdAt: string) => {
     const diffMs = Math.max(0, Date.now() - new Date(createdAt).getTime());
@@ -148,21 +181,42 @@ export default async function AgentQueuePage({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 bg-zinc-200/60 p-1 rounded-lg self-start sm:self-auto text-xs font-medium">
+          {/* Filter Tabs */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-zinc-200/70 p-1 rounded-lg text-xs font-medium">
             <Link
               href="/agent"
               className={`px-3 py-1.5 rounded-md transition-all ${
-                !isResolvedView
+                !filter || filter === 'all'
                   ? 'bg-white text-zinc-900 shadow-xs font-semibold'
                   : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              Active Queue ({openAndInProgress.length})
+              All Active ({openAndInProgress.length})
+            </Link>
+            <Link
+              href="/agent?filter=assigned_me"
+              className={`px-3 py-1.5 rounded-md transition-all ${
+                filter === 'assigned_me'
+                  ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              Assigned to Me ({assignedToMe.length})
+            </Link>
+            <Link
+              href="/agent?filter=unassigned"
+              className={`px-3 py-1.5 rounded-md transition-all ${
+                filter === 'unassigned'
+                  ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              Unassigned ({unassignedTickets.length})
             </Link>
             <Link
               href="/agent?filter=resolved"
               className={`px-3 py-1.5 rounded-md transition-all ${
-                isResolvedView
+                filter === 'resolved'
                   ? 'bg-white text-zinc-900 shadow-xs font-semibold'
                   : 'text-zinc-600 hover:text-zinc-900'
               }`}
@@ -178,10 +232,16 @@ export default async function AgentQueuePage({
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold">
-                  {isResolvedView ? 'Resolved History' : 'Priority Queue'}
+                  {filter === 'resolved'
+                    ? 'Resolved History'
+                    : filter === 'assigned_me'
+                    ? 'My Assigned Tickets'
+                    : filter === 'unassigned'
+                    ? 'Unassigned Queue (Needs Owner)'
+                    : 'Priority Queue'}
                 </CardTitle>
                 <CardDescription className="text-xs mt-0.5">
-                  {isResolvedView
+                  {filter === 'resolved'
                     ? 'Closed and resolved support threads'
                     : 'Ordered by tier weighting and SLA response urgency'}
                 </CardDescription>
@@ -199,12 +259,18 @@ export default async function AgentQueuePage({
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
                 <h3 className="text-sm font-semibold text-zinc-900">
-                  {isResolvedView ? 'No resolved tickets found' : 'Queue is all caught up!'}
+                  {filter === 'resolved'
+                    ? 'No resolved tickets found'
+                    : filter === 'assigned_me'
+                    ? 'No tickets currently assigned to you'
+                    : filter === 'unassigned'
+                    ? 'No unassigned tickets - team has everything covered!'
+                    : 'Queue is all caught up!'}
                 </h3>
                 <p className="text-xs text-zinc-500 max-w-sm mt-1">
-                  {isResolvedView
+                  {filter === 'resolved'
                     ? 'No tickets have been resolved yet.'
-                    : 'There are no open or in-progress tickets waiting for a response.'}
+                    : 'Great job maintaining responsiveness for our customers.'}
                 </p>
               </div>
             ) : (
@@ -216,12 +282,13 @@ export default async function AgentQueuePage({
                       <th scope="col" className="px-6 py-3">Subject & Issue</th>
                       <th scope="col" className="px-6 py-3">Priority</th>
                       <th scope="col" className="px-6 py-3">Status</th>
+                      <th scope="col" className="px-6 py-3">Assignee</th>
                       <th scope="col" className="px-6 py-3">Wait Time</th>
                       <th scope="col" className="px-6 py-3 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-200 bg-white">
-                    {displayTickets.map((ticket, idx) => {
+                    {displayTickets.map((ticket) => {
                       const isTopVip =
                         ticket.customer?.tier === 'enterprise' &&
                         ticket.status === 'open';
@@ -275,6 +342,20 @@ export default async function AgentQueuePage({
                             <StatusBadge status={ticket.status} />
                           </td>
 
+                          {/* Assignee */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {ticket.assigned_agent ? (
+                              <div className="flex items-center gap-1.5 text-xs text-zinc-800 font-medium">
+                                <div className="h-2 w-2 rounded-full bg-blue-500" />
+                                <span>{ticket.assigned_agent.name}</span>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200">
+                                Unassigned
+                              </span>
+                            )}
+                          </td>
+
                           {/* Wait Time */}
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center gap-1.5 text-xs">
@@ -316,6 +397,135 @@ export default async function AgentQueuePage({
             )}
           </CardContent>
         </Card>
+
+        {/* Staff Activity & Internal Notes Dashboard Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+          {/* Recent Internal Notes Panel */}
+          <Card className="border-zinc-200 shadow-sm">
+            <CardHeader className="p-4 pb-3 border-b border-zinc-100 bg-amber-50/40">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-600 text-white">
+                    <Lock className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-sm font-semibold text-zinc-900">
+                      Recent Internal Notes
+                    </CardTitle>
+                    <CardDescription className="text-[11px]">
+                      Colleague handoffs, diagnostics & private discussions
+                    </CardDescription>
+                  </div>
+                </div>
+                <Badge variant="warning" className="text-[10px]">
+                  Team Only
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 divide-y divide-zinc-100 max-h-[300px] overflow-y-auto">
+              {recentInternalNotes.length === 0 ? (
+                <div className="p-6 text-center text-xs text-zinc-400">
+                  No internal notes recorded yet.
+                </div>
+              ) : (
+                recentInternalNotes.map((note) => {
+                  const senderObj = (Array.isArray(note.sender) ? note.sender[0] : note.sender) as { name?: string; role?: string } | null;
+                  const ticketObj = (Array.isArray(note.ticket) ? note.ticket[0] : note.ticket) as { subject?: string } | null;
+
+                  return (
+                    <Link
+                      key={note.id}
+                      href={`/agent/${note.ticket_id}`}
+                      className="block p-3.5 hover:bg-zinc-50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-semibold text-zinc-900">
+                          {senderObj?.name || 'Staff Member'}
+                        </span>
+                        <span className="text-[10px] text-zinc-400 font-mono">
+                          {new Date(note.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-amber-900 mt-1 font-medium line-clamp-2 bg-amber-50/70 p-2 rounded border border-amber-200/50">
+                        &ldquo;{note.body}&rdquo;
+                      </p>
+                      <p className="text-[11px] text-zinc-500 mt-1.5 truncate">
+                        On ticket: <span className="font-medium text-zinc-700">{ticketObj?.subject || 'Ticket'}</span>
+                      </p>
+                    </Link>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Team Audit & Handoffs Activity */}
+          <Card className="border-zinc-200 shadow-sm">
+            <CardHeader className="p-4 pb-3 border-b border-zinc-100 bg-zinc-50/70">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-zinc-700 text-white">
+                    <Activity className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-sm font-semibold text-zinc-900">
+                      Team Activity & Handoff Log
+                    </CardTitle>
+                    <CardDescription className="text-[11px]">
+                      Ticket assignments, status escalations and SLA events
+                    </CardDescription>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px]">
+                  Audit Trail
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 divide-y divide-zinc-100 max-h-[300px] overflow-y-auto">
+              {recentEvents.length === 0 ? (
+                <div className="p-6 text-center text-xs text-zinc-400">
+                  No recent audit activity.
+                </div>
+              ) : (
+                recentEvents.map((evt) => {
+                  const actorObj = (Array.isArray(evt.actor) ? evt.actor[0] : evt.actor) as { name?: string } | null;
+                  const ticketObj = (Array.isArray(evt.ticket) ? evt.ticket[0] : evt.ticket) as { subject?: string } | null;
+
+                  return (
+                    <Link
+                      key={evt.id}
+                      href={`/agent/${evt.ticket_id}`}
+                      className="block p-3.5 hover:bg-zinc-50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800 capitalize">
+                          <span>{evt.action.replace('_', ' ')}</span>
+                          {actorObj?.name && (
+                            <span className="text-[11px] font-normal text-zinc-500">
+                              by {actorObj.name}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-zinc-400 font-mono">
+                          {new Date(evt.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1 truncate">
+                        Ticket: <span className="font-medium text-zinc-700">{ticketObj?.subject || 'Ticket'}</span>
+                      </p>
+                    </Link>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </main>
     </div>
   );

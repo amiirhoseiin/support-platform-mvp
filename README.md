@@ -87,3 +87,4 @@ npm run test:workflow
 - [DECISIONS.md](DECISIONS.md): Architectural decisions, alternatives considered, and trade-offs.
 - [AI_USAGE.md](AI_USAGE.md): Tooling breakdown, time savings, rejected ideas, and verification.
 - [HANDOVER.md](HANDOVER.md): Founder operational guide, limitations, next 5 ranked features, and scale breakdown.
+

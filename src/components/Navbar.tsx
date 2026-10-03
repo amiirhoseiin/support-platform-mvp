@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { UserProfile } from '@/types/database';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { LogOut, LifeBuoy, ShieldCheck, User } from 'lucide-react';
 
 interface NavbarProps {
@@ -80,6 +81,10 @@ export function Navbar({ user }: NavbarProps) {
         </div>
 
         <div className="flex items-center gap-3">
+          {(user.role === 'agent' || user.role === 'founder') && (
+            <NotificationBell userRole={user.role} />
+          )}
+
           <div className="hidden sm:flex flex-col items-end">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-zinc-900">{user.name}</span>

@@ -501,3 +501,201 @@ export async function discardDraft(messageId: string, ticketId: string): Promise
     };
   }
 }
+
+export interface StaffNotificationItem {
+  id: string;
+  type: 'internal_note' | 'assignment' | 'urgent_unassigned';
+  title: string;
+  description: string;
+  ticketId: string;
+  createdAt: string;
+  isUrgent?: boolean;
+}
+
+/**
+ * Assigns or reassigns a ticket to a staff member (or unassigns if null).
+ * Records an immutable 'assigned' event in ticket_events.
+ */
+export async function assignTicket(
+  ticketId: string,
+  assignedAgentId: string | null
+): Promise<ActionResult> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { success: false, error: 'Unauthorized.' };
+    }
+
+    // Verify staff role
+    const { data: profile } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.role !== 'agent' && profile?.role !== 'founder') {
+      return { success: false, error: 'Forbidden. Staff only.' };
+    }
+
+    // Fetch existing assigned agent
+    const { data: currentTicket } = await supabase
+      .from('tickets')
+      .select('assigned_agent_id')
+      .eq('id', ticketId)
+      .single();
+
+    // Update ticket assigned_agent_id
+    const { error: updateError } = await supabase
+      .from('tickets')
+      .update({ assigned_agent_id: assignedAgentId })
+      .eq('id', ticketId);
+
+    if (updateError) {
+      return { success: false, error: updateError.message };
+    }
+
+    // Record 'assigned' event in ticket_events
+    await supabase.from('ticket_events').insert({
+      ticket_id: ticketId,
+      actor_id: user.id,
+      action: 'assigned',
+      old_value: { assigned_agent_id: currentTicket?.assigned_agent_id },
+      new_value: { assigned_agent_id: assignedAgentId },
+    });
+
+    revalidatePath(`/agent/${ticketId}`);
+    revalidatePath('/agent');
+
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('Error assigning ticket:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Failed to assign ticket.',
+    };
+  }
+}
+
+/**
+ * Fetches relevant alerts for staff:
+ * 1. Internal notes by colleagues (especially mentions or urgent notes)
+ * 2. Tickets assigned to the current user
+ * 3. High-priority unassigned tickets
+ */
+export async function getStaffNotifications(): Promise<StaffNotificationItem[]> {
+  try {
+    const supabase = await createClient();
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) return [];
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('name, role')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.role !== 'agent' && profile?.role !== 'founder') return [];
+
+    const items: StaffNotificationItem[] = [];
+
+    // 1. Internal notes by other colleagues
+    const { data: internalNotes } = await supabase
+      .from('messages')
+      .select('id, ticket_id, body, created_at, sender:sender_id(name, role), ticket:ticket_id(subject)')
+      .eq('is_internal_note', true)
+      .neq('sender_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(6);
+
+    if (internalNotes) {
+      internalNotes.forEach((n) => {
+        const senderObj = (Array.isArray(n.sender) ? n.sender[0] : n.sender) as { name?: string } | null;
+        const ticketObj = (Array.isArray(n.ticket) ? n.ticket[0] : n.ticket) as { subject?: string } | null;
+        const isMention =
+          profile.name &&
+          n.body.toLowerCase().includes(profile.name.toLowerCase().split(' ')[0]);
+        const isUrgent = n.body.toLowerCase().includes('urgent') || Boolean(isMention);
+
+        items.push({
+          id: `note-${n.id}`,
+          type: 'internal_note',
+          title: `${senderObj?.name || 'Colleague'} left an internal note`,
+          description: `"${n.body.length > 90 ? n.body.slice(0, 90) + '...' : n.body}" on ${ticketObj?.subject || 'Ticket'}`,
+          ticketId: n.ticket_id,
+          createdAt: n.created_at,
+          isUrgent,
+        });
+      });
+    }
+
+    // 2. Open tickets assigned to current user
+    const { data: myTickets } = await supabase
+      .from('tickets')
+      .select('id, subject, priority, created_at, customer:customer_id(name, tier)')
+      .eq('assigned_agent_id', user.id)
+      .in('status', ['open', 'in_progress'])
+      .order('created_at', { ascending: false })
+      .limit(4);
+
+    if (myTickets) {
+      myTickets.forEach((t) => {
+        const customerObj = (Array.isArray(t.customer) ? t.customer[0] : t.customer) as { name?: string; tier?: string } | null;
+        items.push({
+          id: `assigned-${t.id}`,
+          type: 'assignment',
+          title: `Assigned to You: ${t.subject}`,
+          description: `Customer: ${customerObj?.name || 'Client'} (${customerObj?.tier?.toUpperCase() || 'NORMAL'} Tier) • Priority: ${t.priority}`,
+          ticketId: t.id,
+          createdAt: t.created_at,
+          isUrgent: t.priority === 'critical',
+        });
+      });
+    }
+
+    // 3. Unassigned open tickets (SLA danger)
+    const { data: unassignedTickets } = await supabase
+      .from('tickets')
+      .select('id, subject, priority, created_at, customer:customer_id(name, tier)')
+      .is('assigned_agent_id', null)
+      .eq('status', 'open')
+      .order('created_at', { ascending: true })
+      .limit(3);
+
+    if (unassignedTickets) {
+      unassignedTickets.forEach((t) => {
+        const customerObj = (Array.isArray(t.customer) ? t.customer[0] : t.customer) as { name?: string; tier?: string } | null;
+        items.push({
+          id: `unassigned-${t.id}`,
+          type: 'urgent_unassigned',
+          title: `Unassigned Ticket Needs Owner`,
+          description: `${t.subject} (${customerObj?.name || 'Customer'}, ${customerObj?.tier?.toUpperCase()} Tier)`,
+          ticketId: t.id,
+          createdAt: t.created_at,
+          isUrgent: customerObj?.tier === 'enterprise' || t.priority === 'critical',
+        });
+      });
+    }
+
+    // Sort: urgent first, then newest
+    return items.sort((a, b) => {
+      if (a.isUrgent && !b.isUrgent) return -1;
+      if (!a.isUrgent && b.isUrgent) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  } catch (err: unknown) {
+    console.error('Error fetching staff notifications:', err);
+    return [];
+  }
+}
+

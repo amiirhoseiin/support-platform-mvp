@@ -7,6 +7,7 @@ import { PriorityBadge } from '@/components/tickets/PriorityBadge';
 import { AgentMessageForm } from '@/components/agent/AgentMessageForm';
 import { AiDraftMessageCard } from '@/components/agent/AiDraftMessageCard';
 import { TicketStatusActions } from '@/components/agent/TicketStatusActions';
+import { TicketAssigneeSelector } from '@/components/agent/TicketAssigneeSelector';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Ticket, TicketMessage, TicketEvent, UserProfile } from '@/types/database';
@@ -79,6 +80,20 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
 
   const events: TicketEvent[] = eventsData || [];
 
+  // Fetch staff members for assignment
+  const { data: staffMembersData } = await supabase
+    .from('users')
+    .select('id, name, email, role')
+    .in('role', ['agent', 'founder'])
+    .order('name', { ascending: true });
+
+  const staffMembers = (staffMembersData || []) as {
+    id: string;
+    name: string;
+    email: string;
+    role: 'agent' | 'founder';
+  }[];
+
   const getTierBadge = (tier?: string) => {
     switch (tier) {
       case 'enterprise':
@@ -105,7 +120,14 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
             Back to Unified Queue
           </Link>
 
-          <TicketStatusActions ticketId={ticket.id} currentStatus={ticket.status} />
+          <div className="flex items-center gap-3 flex-wrap">
+            <TicketAssigneeSelector
+              ticketId={ticket.id}
+              currentAssigneeId={ticket.assigned_agent_id}
+              staffMembers={staffMembers}
+            />
+            <TicketStatusActions ticketId={ticket.id} currentStatus={ticket.status} />
+          </div>
         </div>
 
         {/* Ticket Header & Customer Profile Banner */}
@@ -154,6 +176,12 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
                   </span>
                 </div>
               )}
+              <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1 border-t border-zinc-200/60">
+                <span>Assigned Agent:</span>
+                <span className="font-semibold text-zinc-800">
+                  {ticket.assigned_agent?.name || 'Unassigned'}
+                </span>
+              </div>
             </div>
           </div>
 

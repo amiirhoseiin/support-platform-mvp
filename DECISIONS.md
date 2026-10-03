@@ -57,3 +57,10 @@
 * **Reason:** In a strict 6-hour timebox, the most devastating business failure is a customer being unable to submit an issue. E2E testing validates the entire stack (Auth -> Frontend -> Server Action -> DB -> UI update) in one go, proving the core value proposition works.
 * **Alternative Considered:** Using Jest and React Testing Library to write granular unit tests for individual Server Actions and UI components (e.g., testing if a button renders).
 * **Trade-off Accepted:** I deliberately chose *not* to write unit tests. Testing UI cosmetics or basic CRUD functions in an MVP yields extremely low ROI. I traded high "code coverage" percentages for high "business confidence" by ensuring the main workflow never breaks.
+
+**10. Staff Notifications, Ticket Handoffs & Team Activity Stream**
+* **Decision:** Implement an in-app interactive notification bell (`NotificationBell`), ticket assignment selector (`TicketAssigneeSelector`), and a live staff activity & internal notes feed rather than integrating third-party notification services (like Twilio, SendGrid, or Slack webhooks).
+* **Reason:** In day-1 operations with 2 agents and a founder, third-party webhook integrations add external failure points and recurring costs. An in-app reactive notification drawer combined with an explicit ticket handoff mechanism enables zero-drop shift transitions between Mike, Anna, and Sarah without leaving the dashboard.
+* **Alternative Considered:** Sending external emails or Slack webhooks for every internal note and assignment.
+* **Trade-off Accepted:** Team members must be logged into the support platform to see badges and alerts, but it avoids webhook configuration overhead, spam fatigue, and credential leaks.
+
