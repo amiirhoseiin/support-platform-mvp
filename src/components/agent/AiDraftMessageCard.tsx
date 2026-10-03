@@ -273,3 +273,4 @@ export function AiDraftMessageCard({ draft, ticketId }: AiDraftMessageCardProps)
     </div>
   );
 }
+

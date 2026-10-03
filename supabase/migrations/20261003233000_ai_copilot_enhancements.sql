@@ -42,3 +42,4 @@ VALUES (
   }'::jsonb
 )
 ON CONFLICT (key) DO NOTHING;
+

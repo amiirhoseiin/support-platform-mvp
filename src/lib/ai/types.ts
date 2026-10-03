@@ -38,3 +38,4 @@ export interface AutoReplyConfig {
   allowed_categories: TicketCategory[];
   excluded_categories: string[];
 }
+
