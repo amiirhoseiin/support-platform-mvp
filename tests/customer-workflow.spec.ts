@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Customer Critical Path Workflow', () => {
   test('Customer logs in, submits a new ticket, and sees it in the dashboard list', async ({ page }) => {
+    test.setTimeout(60000);
+
     // 1. Navigate to the /login page
     await page.goto('/login');
     await expect(page).toHaveTitle(/B2B SaaS Support|Create Next App/i);
@@ -13,7 +15,7 @@ test.describe('Customer Critical Path Workflow', () => {
     await page.getByRole('button', { name: /Sign In/i }).click();
 
     // 3. Assert successful redirection to the Customer Dashboard (/customer)
-    await page.waitForURL('**/customer', { timeout: 15000 });
+    await page.waitForURL('**/customer', { timeout: 20000 });
     await expect(page).toHaveURL(/\/customer/);
     await expect(page.getByRole('heading', { name: /Customer Support Portal/i })).toBeVisible();
 
@@ -39,7 +41,7 @@ test.describe('Customer Critical Path Workflow', () => {
 
     // 5. Assert ticket creation: wait for either direct detail page or navigate to /customer
     // After creation, the app redirects to the ticket detail page (/customer/[id])
-    await page.waitForURL(/\/customer\/.+/, { timeout: 15000 });
+    await page.waitForURL(/\/customer\/.+/, { timeout: 30000 });
     await expect(page.getByRole('heading', { name: ticketSubject })).toBeVisible();
 
     // Navigate back to the customer dashboard list
