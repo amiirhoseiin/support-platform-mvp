@@ -3,7 +3,7 @@
 > A pragmatic, multi-tenant B2B support platform built with **Next.js (App Router)**, **Tailwind CSS / shadcn**, **Supabase (@supabase/ssr)**, and **Google Gemini via Vercel AI SDK**.
 
 ---
-##⏱️ Build Time
+## ⏱️ Build Time
 This entire project — from initial setup to the working multi-tenant MVP with AI copilot, RLS-enforced isolation, and a passing Playwright test suite — was designed, implemented, and shipped in roughly 5 hours of focused, effective work.
 
 The goal was never to build a polished production system, but to prove that a pragmatic Day-1 MVP with real security guarantees, real AI integration, and real tests can be delivered in a single working session.
