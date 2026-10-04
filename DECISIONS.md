@@ -44,8 +44,6 @@
 * **Alternative Considered:** Paying for expensive proprietary models (OpenAI GPT-4o, Claude 3.5 Sonnet) or enterprise IDE subscriptions (Cursor, GitHub Copilot Enterprise), which introduce monthly per-seat fees and unpredictable token bills.
 * **Trade-off Accepted:** Free Gemini rate limits (RPM) require graceful fallback mechanisms. We accepted this trade-off by implementing a multi-model fallback cascade (`gemini-2.5-flash` -> `gemini-1.5-flash` -> `gemini-2.5-flash-lite`) and strict fail-closed routing to human triage if quotas or timeouts occur.
 
-
-
 **8. Security & Input Sanitization (Public Surface Vulnerabilities)**
 * **Decision:** Rely on a defense-in-depth strategy using React's native XSS protection, Supabase RLS, and AI-system-prompt bounding to handle the 3 most critical risks of a public-facing text input surface.
 * **Reason:** The prompt explicitly notes that people outside the company can type *whatever they like*. The three real risks here are:
@@ -80,4 +78,11 @@
   2. *Autonomous auto-resolution (AI closing tickets without human approval):* Extremely dangerous in an MVP; leads to customer frustration if the issue was misunderstood.
   3. *Tightly coupling code to OpenAI/Anthropic SDKs:* Makes provider migrations costly and risks vendor lock-in.
 * **Trade-off Accepted:** High precision over high automation volume. Some tickets that *could* have been auto-replied will require human eyes because confidence was 0.82 or classified as a bug, but zero customer data leaks and zero billing accidents occur.
+
+**12. Atomic AI Triage & Auto-Reply via SECURITY DEFINER RPC (`apply_ai_triage`)**
+* **Decision:** Execute background AI triage, auto-reply insertion, and draft generation via a PostgreSQL `SECURITY DEFINER` procedure (`public.apply_ai_triage`), and open `public.app_settings` SELECT to all authenticated users.
+* **Reason:** Tickets are created within the customer's authenticated Next.js session. Customers must never have arbitrary `UPDATE` rights on `tickets` (to prevent status or agent tampering). By utilizing a `SECURITY DEFINER` RPC that verifies caller ownership (`auth.uid() = customer_id` or `is_staff()`), the system atomically updates classification metadata, sets `first_responded_at`, inserts the public auto-reply or staff draft with support team sender identity, and logs the event without hitting client RLS permission locks.
+* **Alternative Considered:** Giving customers direct `UPDATE` permissions on `tickets` or embedding the Supabase service role key in user-facing Next.js Server Actions.
+* **Trade-off Accepted:** Added a dedicated SQL migration for the RPC function, but achieved zero privilege escalation risk and guaranteed atomic execution.
+
 
