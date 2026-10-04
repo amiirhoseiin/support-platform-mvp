@@ -261,15 +261,38 @@ export async function triageTicketWithAi(
       aiResult.confidence >= config.min_confidence &&
       aiResult.suggestedReplyText.trim().length > 0;
 
-    if (canAutoReply) {
-      // Human escape hatch appended to all auto-replies
-      const replyWithEscapeHatch = `${aiResult.suggestedReplyText.trim()}
+    const replyWithEscapeHatch = `${aiResult.suggestedReplyText.trim()}
 
 ---
-*Note: This response was generated automatically based on previous verified solutions for your account. If this does not resolve your inquiry, simply reply to this message and our support team will assist you immediately.*`;
+*Note: This response was generated automatically based on verified support policy. If this does not resolve your inquiry, simply reply to this message and our support team will assist you immediately.*`;
 
-      // Insert public live reply (is_ai_draft: false)
-      // Use system or ticket assigned agent / founder as sender
+    // 6. Persist triage atomically via apply_ai_triage RPC (SECURITY DEFINER)
+    // This allows customer-submitted tickets to receive auto-replies or drafts without RLS recursion
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('apply_ai_triage', {
+        p_ticket_id: ticket.id,
+        p_category: aiResult.category,
+        p_confidence: aiResult.confidence,
+        p_reasoning: aiResult.reasoning,
+        p_auto_reply_body: canAutoReply ? replyWithEscapeHatch : null,
+        p_draft_body: !canAutoReply && aiResult.suggestedReplyText.trim().length > 0 ? aiResult.suggestedReplyText.trim() : null,
+        p_provider: aiResult.provider,
+        p_similar_tickets: aiResult.similarTicketsUsed || [],
+      });
+
+      if (!rpcErr && rpcRes?.success) {
+        if (canAutoReply && rpcRes?.auto_replied) {
+          aiResult.autoReplied = true;
+          return { success: true, autoReplied: true, result: aiResult };
+        }
+        return { success: true, autoReplied: false, result: aiResult };
+      }
+    } catch (rpcCatchErr) {
+      console.warn('apply_ai_triage RPC fallback to direct operations:', rpcCatchErr);
+    }
+
+    // Direct fallback path if RPC is not present
+    if (canAutoReply) {
       const { data: founderUser } = await supabase
         .from('users')
         .select('id')
@@ -300,16 +323,14 @@ export async function triageTicketWithAi(
         .select('id')
         .single();
 
-      // Update ticket: set first_responded_at, set status to in_progress (NEVER auto-close!)
       await supabase
         .from('tickets')
         .update({
           first_responded_at: new Date().toISOString(),
-          status: 'in_progress', // ALWAYS keeps ticket open for human follow-up
+          status: 'in_progress',
         })
         .eq('id', ticket.id);
 
-      // Audit log the auto-reply event
       await supabase.from('ticket_events').insert({
         ticket_id: ticket.id,
         action: 'status_changed',
@@ -326,10 +347,7 @@ export async function triageTicketWithAi(
       return { success: true, autoReplied: true, result: aiResult };
     }
 
-    // DEFAULT HUMAN-IN-THE-LOOP PATH:
-    // Insert suggested draft into messages with is_ai_draft: true
     if (aiResult.suggestedReplyText.trim().length > 0) {
-      // Find staff sender
       const { data: staffUser } = await supabase
         .from('users')
         .select('id')

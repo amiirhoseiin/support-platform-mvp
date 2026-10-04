@@ -46,10 +46,10 @@ function extractJsonFromText<T>(rawText: string): T | null {
  */
 export class GeminiAiProvider implements AiProviderInterface {
   private candidateModels = [
-    'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-2.5-flash-lite',
     'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.8-flash',
   ];
 
   async classifyAndDraft(params: {
@@ -93,7 +93,8 @@ SECURITY DIRECTIVE & PROMPT INJECTION DEFENSE:
 
 CATEGORIZATION RULES:
 Classify the ticket into exactly one of these 4 categories:
-- "duplicate_question": How-to questions, onboarding, invitation, settings, documentation queries, or issues already solved in tenant history.
+- "duplicate_question": How-to questions, onboarding, general inquiries, greetings (e.g. "hi", "hello", "need assistance", "how to start"), settings, documentation queries, or issues already solved in tenant history.
+  Note on Greetings & General Inquiries: If the customer provides a standard greeting or introductory message (e.g. "hi", "hello", "good morning"), classify as "duplicate_question" with confidence 0.90, set is_high_risk: false, and generate a welcoming, warm customer service reply asking how support can assist them today.
 - "billing": Invoices, payments, credit card, subscription tier, charges, refunds. (ALWAYS HIGH RISK).
 - "bug": System crashes, HTTP 500 errors, database disconnects, broken features, data corruption.
 - "feature_request": Requests for new capabilities, integrations, or UX enhancements.
