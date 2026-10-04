@@ -181,7 +181,8 @@ export async function updateAutoReplyConfig(
  */
 export async function triageTicketWithAi(
   supabase: SupabaseClient,
-  ticketId: string
+  ticketId: string,
+  options?: { isFollowUp?: boolean }
 ): Promise<{
   success: boolean;
   autoReplied: boolean;
@@ -205,21 +206,48 @@ export async function triageTicketWithAi(
     } | null;
     const customerTier = customerObj?.tier || 'small';
 
-    // 2. Retrieve tenant-scoped solved tickets (Zero cross-tenant leakage)
+    // 2. Fetch public messages in this thread for multi-turn conversation context
+    const { data: threadMessages } = await supabase
+      .from('messages')
+      .select('sender_id, body, is_internal_note, is_ai_draft, created_at')
+      .eq('ticket_id', ticketId)
+      .eq('is_internal_note', false)
+      .eq('is_ai_draft', false)
+      .order('created_at', { ascending: true });
+
+    let latestCustomerText = ticket.description;
+    let conversationHistory = '';
+
+    if (threadMessages && threadMessages.length > 0) {
+      conversationHistory = threadMessages
+        .map(
+          (m) =>
+            `${m.sender_id === ticket.customer_id ? 'Customer' : 'Reza (AI Support Assistant)'}: ${m.body}`
+        )
+        .join('\n\n');
+
+      const customerMsgs = threadMessages.filter((m) => m.sender_id === ticket.customer_id);
+      if (customerMsgs.length > 0) {
+        latestCustomerText = customerMsgs[customerMsgs.length - 1].body;
+      }
+    }
+
+    // 3. Retrieve tenant-scoped solved tickets (Zero cross-tenant leakage)
     const similarSolvedTickets = await getTenantSolvedTickets(
       supabase,
       ticket.customer_id,
       ticket.id
     );
 
-    // 3. Run AI classification & draft generation
+    // 4. Run AI classification & draft generation with full conversational context
     const aiProvider = getAiProvider();
     const aiResult = await aiProvider.classifyAndDraft({
       subject: ticket.subject,
-      description: ticket.description,
+      description: latestCustomerText,
       customerTier,
       customerId: ticket.customer_id,
       similarSolvedTickets,
+      conversationHistory: conversationHistory || undefined,
     });
 
     // 4. Update ticket metadata with classification category and confidence

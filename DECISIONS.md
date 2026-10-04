@@ -91,5 +91,12 @@
 * **Alternative Considered:** Calling it generic "System Bot" or pretending the message was typed personally by Founder Sarah.
 * **Trade-off Accepted:** Automated messages are explicitly marked as AI-originated (with a human escalation note), which enhances customer trust and eliminates fake-human impersonation.
 
+**14. Multi-Turn Conversational AI Auto-Reply for Customer Replies (`Reza` Thread Continuations)**
+* **Decision:** Trigger AI triage and auto-reply not only upon initial ticket creation, but also when a customer posts follow-up replies in an existing ticket thread (`sendMessage`).
+* **Reason:** In real-world support, customers reply to the AI's greeting or initial answer (e.g. asking "how do I invite team members?"). Limiting AI triage strictly to `createTicket` caused Reza to go silent immediately after the first greeting. By passing the sanitized `<active_conversation_thread_history>` into Gemini 3.5 Flash Lite, Reza understands the conversational context across turns. If Auto-Reply is enabled and confidence meets or exceeds 90% (or the configured threshold) on low-risk inquiries, Reza replies immediately. If the reply involves billing, security, or a system bug, it safely fails closed into an agent review draft.
+* **Alternative Considered:** Requiring customers to open a brand-new ticket for every single question to trigger AI responses.
+* **Trade-off Accepted:** Slightly higher prompt context (up to 6,000 characters of recent sanitized thread history), which is costless on Gemini 3.5 Flash Lite while delivering a coherent conversational support experience.
+
+
 
 

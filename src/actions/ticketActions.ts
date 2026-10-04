@@ -210,6 +210,14 @@ export async function sendMessage(formData: FormData): Promise<ActionResult<{ me
             });
           }
         }
+      } else if (profile?.role === 'customer') {
+        // Customer replied in the ticket thread!
+        // Trigger conversational AI auto-reply / draft generation (Fail-Closed)
+        try {
+          await triageTicketWithAi(supabase, ticketId, { isFollowUp: true });
+        } catch (aiErr) {
+          console.warn('AI Triage on customer reply failed, safely routed to human queue:', aiErr);
+        }
       }
     }
 
