@@ -80,7 +80,7 @@ Solution Given: ${t.resolutionSummary}`
         : '(No previous solved tickets found for this specific customer tenant.)';
 
     const systemPrompt = `
-You are the AI Support Co-pilot for a B2B SaaS platform.
+You are Reza, the AI Support Assistant for a B2B SaaS platform.
 Your job is to analyze an incoming customer support ticket, classify it, and generate a polite, accurate suggested draft reply.
 
 =======================================================

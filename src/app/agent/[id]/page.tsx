@@ -27,6 +27,7 @@ import {
   Paperclip,
   FileText,
   Activity,
+  Bot,
 } from 'lucide-react';
 import { SLA_TARGETS_MINUTES, formatMinutes } from '@/lib/sla';
 import { CustomerTier } from '@/types/database';
@@ -368,20 +369,23 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
                     );
                   }
 
-                  // Normal message (Customer or Staff)
+                  // Normal message (Customer, Staff, or Automated AI)
+                  const isAutoReplied = Boolean(message.metadata?.auto_replied);
                   const isStaff =
-                    message.sender?.role === 'agent' || message.sender?.role === 'founder';
+                    message.sender?.role === 'agent' || message.sender?.role === 'founder' || isAutoReplied;
                   const isAiAssisted = Boolean(
                     message.metadata?.is_ai_assisted ||
                     message.metadata?.human_reviewed ||
-                    message.metadata?.auto_replied
+                    isAutoReplied
                   );
 
                   return (
                     <div
                       key={message.id}
                       className={`flex flex-col rounded-xl border p-4 shadow-2xs transition-all ${
-                        isStaff
+                        isAutoReplied
+                          ? 'border-purple-200 bg-purple-50/20 ml-4 sm:ml-8'
+                          : isStaff
                           ? 'border-emerald-200 bg-emerald-50/30 ml-4 sm:ml-8'
                           : 'border-zinc-200 bg-white mr-4 sm:mr-8'
                       }`}
@@ -390,30 +394,40 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
                         <div className="flex items-center gap-2">
                           <div
                             className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
-                              isStaff
+                              isAutoReplied
+                                ? 'bg-purple-600 text-white shadow-xs'
+                                : isStaff
                                 ? 'bg-emerald-600 text-white'
                                 : 'bg-zinc-700 text-white'
                             }`}
                           >
-                            {isStaff ? (
+                            {isAutoReplied ? (
+                              <Bot className="h-3 w-3" />
+                            ) : isStaff ? (
                               <ShieldCheck className="h-3 w-3" />
                             ) : (
                               <User className="h-3 w-3" />
                             )}
                           </div>
                           <span className="font-semibold text-zinc-900">
-                            {message.sender?.name || (isStaff ? 'Support Agent' : 'Customer')}
+                            {isAutoReplied
+                              ? 'Reza (AI Support Assistant)'
+                              : message.sender?.name || (isStaff ? 'Support Agent' : 'Customer')}
                           </span>
-                          {isStaff && (
+                          {isAutoReplied ? (
+                            <Badge variant="purple" className="text-[10px] py-0 px-1.5 h-4">
+                              🤖 AI Assistant
+                            </Badge>
+                          ) : isStaff ? (
                             <Badge variant="success" className="text-[10px] py-0 px-1.5 h-4">
                               Support Agent
                             </Badge>
-                          )}
+                          ) : null}
                           {isAiAssisted && (
                             <span className="inline-flex items-center gap-1 text-[10px] py-0.5 px-1.5 rounded-full font-medium bg-violet-100 text-violet-800 border border-violet-200">
                               <Sparkles className="h-2.5 w-2.5 text-violet-600" />
                               {message.metadata?.auto_replied
-                                ? 'AI Auto-Reply'
+                                ? 'Automated Instant Reply'
                                 : message.metadata?.was_edited_by_agent
                                 ? 'AI Copilot (Edited & Approved)'
                                 : 'AI Copilot (Approved)'}

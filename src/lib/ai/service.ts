@@ -264,7 +264,7 @@ export async function triageTicketWithAi(
     const replyWithEscapeHatch = `${aiResult.suggestedReplyText.trim()}
 
 ---
-*Note: This response was generated automatically based on verified support policy. If this does not resolve your inquiry, simply reply to this message and our support team will assist you immediately.*`;
+*Note: This response was generated automatically by Reza (AI Support Assistant). If this does not resolve your inquiry, simply reply to this message and our human engineering team will assist you immediately.*`;
 
     // 6. Persist triage atomically via apply_ai_triage RPC (SECURITY DEFINER)
     // This allows customer-submitted tickets to receive auto-replies or drafts without RLS recursion
@@ -312,6 +312,7 @@ export async function triageTicketWithAi(
           is_ai_draft: false,
           metadata: {
             auto_replied: true,
+            ai_agent_name: 'Reza (AI Support Assistant)',
             human_reviewed: false,
             classification: aiResult.category,
             confidence: aiResult.confidence,

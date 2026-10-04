@@ -8,7 +8,7 @@ import { CustomerMessageForm } from '@/components/customer/CustomerMessageForm';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Ticket, TicketMessage, UserProfile } from '@/types/database';
-import { ArrowLeft, Clock, User, ShieldCheck, CheckCircle2, MessageSquare, Sparkles } from 'lucide-react';
+import { ArrowLeft, Clock, User, ShieldCheck, CheckCircle2, MessageSquare, Sparkles, Bot } from 'lucide-react';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -135,14 +135,15 @@ export default async function CustomerTicketDetailPage({ params }: PageProps) {
             <div className="space-y-3">
               {messages.map((message) => {
                 const isCurrentUser = message.sender_id === user.id;
+                const isAutoReplied = Boolean(message.metadata?.auto_replied);
                 const isStaff =
                   message.sender?.role === 'agent' ||
                   message.sender?.role === 'founder' ||
-                  Boolean(message.metadata?.human_reviewed || message.metadata?.auto_replied || message.metadata?.is_ai_assisted || (!isCurrentUser && !message.is_internal_note));
+                  Boolean(message.metadata?.human_reviewed || isAutoReplied || message.metadata?.is_ai_assisted || (!isCurrentUser && !message.is_internal_note));
                 const isAiAssisted = Boolean(
                   message.metadata?.is_ai_assisted ||
                   message.metadata?.human_reviewed ||
-                  message.metadata?.auto_replied
+                  isAutoReplied
                 );
 
                 return (
@@ -151,6 +152,8 @@ export default async function CustomerTicketDetailPage({ params }: PageProps) {
                     className={`flex flex-col rounded-xl border p-4 shadow-2xs transition-all ${
                       isCurrentUser
                         ? 'border-blue-100 bg-blue-50/30 ml-4 sm:ml-8'
+                        : isAutoReplied
+                        ? 'border-purple-200 bg-purple-50/20 mr-4 sm:mr-8'
                         : isStaff
                         ? 'border-emerald-100 bg-emerald-50/30 mr-4 sm:mr-8'
                         : 'border-zinc-200 bg-white'
@@ -162,31 +165,50 @@ export default async function CustomerTicketDetailPage({ params }: PageProps) {
                           className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
                             isCurrentUser
                               ? 'bg-blue-600 text-white'
+                              : isAutoReplied
+                              ? 'bg-purple-600 text-white shadow-xs'
                               : isStaff
                               ? 'bg-emerald-600 text-white'
                               : 'bg-zinc-700 text-white'
                           }`}
                         >
-                          {isStaff ? (
+                          {isCurrentUser ? (
+                            <User className="h-3 w-3" />
+                          ) : isAutoReplied ? (
+                            <Bot className="h-3 w-3" />
+                          ) : isStaff ? (
                             <ShieldCheck className="h-3 w-3" />
                           ) : (
                             <User className="h-3 w-3" />
                           )}
                         </div>
                         <span className="font-semibold text-zinc-900">
-                          {isCurrentUser ? 'You' : message.sender?.name || (isStaff ? 'Support Team' : 'User')}
+                          {isCurrentUser
+                            ? 'You'
+                            : isAutoReplied
+                            ? 'Reza (AI Support Assistant)'
+                            : message.sender?.name || (isStaff ? 'Support Team' : 'User')}
                         </span>
-                        {isStaff && (
+                        {isAutoReplied ? (
+                          <Badge variant="purple" className="text-[10px] py-0 px-1.5 h-4">
+                            🤖 AI Assistant
+                          </Badge>
+                        ) : isStaff ? (
                           <Badge variant="success" className="text-[10px] py-0 px-1.5 h-4">
                             Support Team
                           </Badge>
-                        )}
-                        {isAiAssisted && !isCurrentUser && (
+                        ) : null}
+                        {isAutoReplied ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] py-0.5 px-1.5 rounded-full font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                            <Sparkles className="h-2.5 w-2.5 text-purple-600" />
+                            Automated Instant Reply
+                          </span>
+                        ) : isAiAssisted && !isCurrentUser ? (
                           <span className="inline-flex items-center gap-1 text-[10px] py-0.5 px-1.5 rounded-full font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
                             <Sparkles className="h-2.5 w-2.5 text-indigo-600" />
                             AI-Assisted Reply
                           </span>
-                        )}
+                        ) : null}
                       </div>
 
                       <span className="text-[11px] text-zinc-400 font-mono">

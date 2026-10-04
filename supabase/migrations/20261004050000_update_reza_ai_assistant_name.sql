@@ -1,15 +1,6 @@
--- Migration: 20261004043000_ai_auto_reply_permissions_and_rpc.sql
--- 1. Allow authenticated users to view app_settings (so customers can read auto_reply config during ticket creation)
--- 2. Provide public.apply_ai_triage SECURITY DEFINER function to atomically apply AI classification,
---    auto-replies, and drafts without violating customer RLS boundary on tickets table.
+-- Migration: 20261004050000_update_reza_ai_assistant_name.sql
+-- Updates apply_ai_triage to explicitly stamp ai_agent_name as 'Reza (AI Support Assistant)'
 
-DROP POLICY IF EXISTS "Staff view settings" ON public.app_settings;
-DROP POLICY IF EXISTS "Authenticated view settings" ON public.app_settings;
-CREATE POLICY "Authenticated view settings" ON public.app_settings
-  FOR SELECT TO authenticated
-  USING (true);
-
--- Atomic AI Triage Stored Procedure
 CREATE OR REPLACE FUNCTION public.apply_ai_triage(
   p_ticket_id UUID,
   p_category TEXT,
@@ -40,7 +31,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Unauthorized');
   END IF;
 
-  -- 2. Determine support sender ID (founder, agent, or assigned agent)
+  -- 2. Determine support sender ID (founder, agent, or customer fallback)
   SELECT id INTO v_sender_id FROM public.users WHERE role = 'founder' LIMIT 1;
   IF v_sender_id IS NULL THEN
     SELECT id INTO v_sender_id FROM public.users WHERE role = 'agent' LIMIT 1;
