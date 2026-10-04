@@ -85,4 +85,11 @@
 * **Alternative Considered:** Giving customers direct `UPDATE` permissions on `tickets` or embedding the Supabase service role key in user-facing Next.js Server Actions.
 * **Trade-off Accepted:** Added a dedicated SQL migration for the RPC function, but achieved zero privilege escalation risk and guaranteed atomic execution.
 
+**13. AI Persona & Sender Attribution: Dedicated Identity (`Reza (AI Support Assistant)`)**
+* **Decision:** Attribute all automated AI responses to a dedicated persona—`Reza (AI Support Assistant)`—with a custom Bot avatar and `🤖 AI Assistant` badge, instead of using the founder or agent's personal name.
+* **Reason:** Displaying an executive's personal name (`Founder`) on automated messages is confusing, unpolished, and risks customer trust if the response misses context. Attributing instant replies to `Reza (AI Support Assistant)` establishes complete transparency, professional courtesy, and enterprise polish. Conversely, human-reviewed drafts continue to show the approving agent's name (`Mike Johnson`, `Support Agent`) with an `✨ AI-Assisted Reply` badge.
+* **Alternative Considered:** Calling it generic "System Bot" or pretending the message was typed personally by Founder Sarah.
+* **Trade-off Accepted:** Automated messages are explicitly marked as AI-originated (with a human escalation note), which enhances customer trust and eliminates fake-human impersonation.
+
+
 
