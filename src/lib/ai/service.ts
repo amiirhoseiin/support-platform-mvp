@@ -131,16 +131,38 @@ export async function updateAutoReplyConfig(
       excluded_categories: ['billing', 'security', 'bug'],
     };
 
-    const { error } = await supabase
+    // First attempt a direct update since the row is pre-seeded
+    const { data: updatedRows, error: updateError } = await supabase
       .from('app_settings')
-      .upsert({
-        key: 'auto_reply',
+      .update({
         value: updated,
         updated_at: new Date().toISOString(),
         updated_by: userId,
-      });
+      })
+      .eq('key', 'auto_reply')
+      .select();
 
-    if (error) return { success: false, error: error.message };
+    if (!updateError && updatedRows && updatedRows.length > 0) {
+      return { success: true };
+    }
+
+    // Fallback to explicit upsert on conflict key
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert(
+        {
+          key: 'auto_reply',
+          value: updated,
+          updated_at: new Date().toISOString(),
+          updated_by: userId,
+        },
+        { onConflict: 'key' }
+      );
+
+    if (error) {
+      console.error('Error updating app_settings:', error);
+      return { success: false, error: error.message };
+    }
     return { success: true };
   } catch (err: unknown) {
     return {
