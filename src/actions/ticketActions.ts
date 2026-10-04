@@ -379,14 +379,21 @@ export async function approveAndSendDraft(
     const existingMeta = (existingMsg?.metadata || {}) as Record<string, unknown>;
     const wasEdited = Boolean(editedText && editedText.trim() !== existingMsg?.body?.trim());
 
-    const updatePayload: { is_ai_draft: boolean; body?: string; metadata: Record<string, unknown> } = {
+    const updatePayload: {
+      is_ai_draft: boolean;
+      sender_id: string;
+      body?: string;
+      metadata: Record<string, unknown>;
+    } = {
       is_ai_draft: false,
+      sender_id: user.id, // Ensure message sender is the approving agent/founder
       metadata: {
         ...existingMeta,
         human_reviewed: true,
         reviewed_by: user.id,
         reviewed_at: new Date().toISOString(),
         was_edited_by_agent: wasEdited,
+        is_ai_assisted: true,
       },
     };
 
@@ -394,7 +401,7 @@ export async function approveAndSendDraft(
       updatePayload.body = editedText.trim();
     }
 
-    // 1. Update message: clear is_ai_draft flag, update body if edited
+    // 1. Update message: clear is_ai_draft flag, set approving agent as sender, update body if edited
     const { error: msgUpdateError } = await supabase
       .from('messages')
       .update(updatePayload)
@@ -407,16 +414,19 @@ export async function approveAndSendDraft(
     // 2. Update ticket first_responded_at & status if needed
     const { data: ticket } = await supabase
       .from('tickets')
-      .select('first_responded_at, status')
+      .select('first_responded_at, status, assigned_agent_id')
       .eq('id', ticketId)
       .single();
 
-    const updates: { first_responded_at?: string; status?: TicketStatus } = {};
+    const updates: { first_responded_at?: string; status?: TicketStatus; assigned_agent_id?: string } = {};
     if (!ticket?.first_responded_at) {
       updates.first_responded_at = new Date().toISOString();
     }
     if (ticket?.status === 'open') {
       updates.status = 'in_progress';
+    }
+    if (!ticket?.assigned_agent_id) {
+      updates.assigned_agent_id = user.id;
     }
 
     if (Object.keys(updates).length > 0) {

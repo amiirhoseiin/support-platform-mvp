@@ -371,6 +371,11 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
                   // Normal message (Customer or Staff)
                   const isStaff =
                     message.sender?.role === 'agent' || message.sender?.role === 'founder';
+                  const isAiAssisted = Boolean(
+                    message.metadata?.is_ai_assisted ||
+                    message.metadata?.human_reviewed ||
+                    message.metadata?.auto_replied
+                  );
 
                   return (
                     <div
@@ -397,12 +402,22 @@ export default async function AgentTicketDetailPage({ params }: PageProps) {
                             )}
                           </div>
                           <span className="font-semibold text-zinc-900">
-                            {message.sender?.name || 'Customer'}
+                            {message.sender?.name || (isStaff ? 'Support Agent' : 'Customer')}
                           </span>
                           {isStaff && (
                             <Badge variant="success" className="text-[10px] py-0 px-1.5 h-4">
                               Support Agent
                             </Badge>
+                          )}
+                          {isAiAssisted && (
+                            <span className="inline-flex items-center gap-1 text-[10px] py-0.5 px-1.5 rounded-full font-medium bg-violet-100 text-violet-800 border border-violet-200">
+                              <Sparkles className="h-2.5 w-2.5 text-violet-600" />
+                              {message.metadata?.auto_replied
+                                ? 'AI Auto-Reply'
+                                : message.metadata?.was_edited_by_agent
+                                ? 'AI Copilot (Edited & Approved)'
+                                : 'AI Copilot (Approved)'}
+                            </span>
                           )}
                         </div>
 

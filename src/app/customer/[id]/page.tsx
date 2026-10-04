@@ -8,7 +8,7 @@ import { CustomerMessageForm } from '@/components/customer/CustomerMessageForm';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Ticket, TicketMessage, UserProfile } from '@/types/database';
-import { ArrowLeft, Clock, User, ShieldCheck, CheckCircle2, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Clock, User, ShieldCheck, CheckCircle2, MessageSquare, Sparkles } from 'lucide-react';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -136,7 +136,14 @@ export default async function CustomerTicketDetailPage({ params }: PageProps) {
               {messages.map((message) => {
                 const isCurrentUser = message.sender_id === user.id;
                 const isStaff =
-                  message.sender?.role === 'agent' || message.sender?.role === 'founder';
+                  message.sender?.role === 'agent' ||
+                  message.sender?.role === 'founder' ||
+                  Boolean(message.metadata?.human_reviewed || message.metadata?.auto_replied || message.metadata?.is_ai_assisted || (!isCurrentUser && !message.is_internal_note));
+                const isAiAssisted = Boolean(
+                  message.metadata?.is_ai_assisted ||
+                  message.metadata?.human_reviewed ||
+                  message.metadata?.auto_replied
+                );
 
                 return (
                   <div
@@ -167,12 +174,18 @@ export default async function CustomerTicketDetailPage({ params }: PageProps) {
                           )}
                         </div>
                         <span className="font-semibold text-zinc-900">
-                          {isCurrentUser ? 'You' : message.sender?.name || 'Support Agent'}
+                          {isCurrentUser ? 'You' : message.sender?.name || (isStaff ? 'Support Team' : 'User')}
                         </span>
                         {isStaff && (
                           <Badge variant="success" className="text-[10px] py-0 px-1.5 h-4">
                             Support Team
                           </Badge>
+                        )}
+                        {isAiAssisted && !isCurrentUser && (
+                          <span className="inline-flex items-center gap-1 text-[10px] py-0.5 px-1.5 rounded-full font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <Sparkles className="h-2.5 w-2.5 text-indigo-600" />
+                            AI-Assisted Reply
+                          </span>
                         )}
                       </div>
 
